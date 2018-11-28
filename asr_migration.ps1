@@ -1,8 +1,9 @@
 
 #Connect-AzureRmAccount
-[cmdletbinding(SupportsShouldProcess=$True)]
-[parameter(Mandatory=$true)]
-$CsvFilePath
+Param(
+    [parameter(Mandatory=$true)]
+    $CsvFilePath
+)
 
 $migrationDate = Get-Date
 $logDate = $migrationDate.ToString("MM/dd/yyyy HH:mm:ss")
@@ -11,7 +12,7 @@ Function LogError([string] $Message)
 {
     $logMessage = [string]::Concat($logDate, "[ERROR]-", $Message)
     Write-Output $logMessage
-    Write-Error $logMessage
+    Write-Host $logMessage
 }
 
 Function LogTrace([string] $Message)
@@ -22,13 +23,14 @@ Function LogTrace([string] $Message)
 }
 
 LogTrace "[START]-Starting Asr Replication"
+LogTrace "File: $CsvFilePath"
 
 $resolvedCsvPath = Resolve-Path -LiteralPath $CsvFilePath
 $csvObj = Import-Csv $resolvedCsvPath -Delimiter ','
 
 $ErrorActionPreference = "Stop"
 
-foreach ($csvItem in $csvObj)
+Function StartReplicationJobItem($csvItem)
 {
     $subscriptionId = $csvItem.VAULT_SUBSCRIPTION_ID
 
@@ -50,15 +52,17 @@ foreach ($csvItem in $csvObj)
     $targetPostFailoverStorageAccountName = $csvItem.TARGET_STORAGE_ACCOUNT
     $targetPostFailoverVNET = $csvItem.TARGET_VNET
     $targetPostFailoverSubnet = $csvItem.TARGET_SUBNET
-    $sourceMachineName = $csvItem.MACHINE_NAME
+    $sourceMachineName = $csvItem.SOURCE_MACHINE_NAME
     $replicationPolicy = $csvItem.REPLICATION_POLICY
     $targetAvailabilitySet = $csvItem.AVAILABILITY_SET
     $targetPrivateIP = $csvItem.PRIVATE_IP
     $targetMachineSize = $csvItem.MACHINE_SIZE
+    $targetMachineName = $csvItem.TARGET_MACHINE_NAME
 
     #Print replication settings
     LogTrace "[REPLICATIONJOB]-$($sourceMachineName)"
     LogTrace "SourceMachineName=$($sourceMachineName)"
+    LogTrace "TargetMachineName=$($targetMachineName)"
     LogTrace "VaultName=$($vaultName)"
     LogTrace "AccountName=$($sourceAccountName)"
     LogTrace "TargetPostFailoverResourceGroup=$($targetPostFailoverResourceGroup)"
@@ -98,6 +102,7 @@ foreach ($csvItem in $csvObj)
     $sourceProcessServerObj = $fabricServer.FabricSpecificDetails.ProcessServers | Where-Object { $_.FriendlyName -eq $sourceProcessServer }
     $sourceAccountObj = $fabricServer.FabricSpecificDetails.RunAsAccounts | Where-Object { $_.AccountName -eq $sourceAccountName }
 
+    LogTrace "Starting replication Job for source '$($sourceMachineName)'"
     $replicationJob = New-AzureRmRecoveryServicesAsrReplicationProtectedItem `
         -VMwareToAzure `
         -ProtectableItem $protectableVM `
@@ -108,7 +113,37 @@ foreach ($csvItem in $csvObj)
         -Account $sourceAccountObj `
         -RecoveryResourceGroupId $targetResourceGroupObj.ResourceId `
         -RecoveryAzureNetworkId $targetVnetObj.Id `
-        -RecoveryAzureSubnetName $targetPostFailoverSubnet 
+        -RecoveryAzureSubnetName $targetPostFailoverSubnet `
+        -RecoveryVmName $targetMachineName
+
+    $replicationJobObj = Get-AzureRmRecoveryServicesAsrJob -Name $replicationJob.Name
+    while ($replicationJobObj.State -eq 'NotStarted') {
+        Write-Host "." -NoNewline 
+        $replicationJobObj = Get-AzureRmRecoveryServicesAsrJob -Name $replicationJob.Name
+    }
+
+    if ($replicationJobObj.State -eq 'Failed')
+    {
+        LogTrace "Error starting replication job"
+        foreach ($replicationJobError in $replicationJobObj.Errors)
+        {
+            LogError $replicationJobError.ServiceErrorDetails.Message
+            LogError $replicationJobError.ServiceErrorDetails.PossibleCauses
+        }
+    } else {
+        LogTrace "ReplicationJob initiated"        
+    }
+}
+
+foreach ($csvItem in $csvObj)
+{
+    try {
+        StartReplicationJobItem -csvItem $csvItem
+    } catch {
+        LogError "Exception creating replication job"
+        $exceptionMessage = $_ | Out-String
+        LogError $exceptionMessage
+    }
 }
 
 LogTrace "[FINISH]-Finishing Asr Replication"
