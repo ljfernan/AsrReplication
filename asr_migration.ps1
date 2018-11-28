@@ -60,7 +60,7 @@ Function StartReplicationJobItem($csvItem)
     $targetMachineName = $csvItem.TARGET_MACHINE_NAME
 
     #Print replication settings
-    LogTrace "[REPLICATIONJOB]-$($sourceMachineName)"
+    LogTrace "[REPLICATIONJOB SETTINGS]-$($sourceMachineName)"
     LogTrace "SourceMachineName=$($sourceMachineName)"
     LogTrace "TargetMachineName=$($targetMachineName)"
     LogTrace "VaultName=$($vaultName)"
@@ -124,7 +124,7 @@ Function StartReplicationJobItem($csvItem)
 
     if ($replicationJobObj.State -eq 'Failed')
     {
-        LogTrace "Error starting replication job"
+        LogError "Error starting replication job"
         foreach ($replicationJobError in $replicationJobObj.Errors)
         {
             LogError $replicationJobError.ServiceErrorDetails.Message
