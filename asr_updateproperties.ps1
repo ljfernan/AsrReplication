@@ -30,7 +30,7 @@ Function LogTrace([string] $Message)
     Write-Host $logMessage
 }
 
-LogTrace("[START]-Starting Asr Replication")
+LogTrace("[START]-Starting Update properties")
 LogTrace("File: $($CsvFilePath)")
 
 $resolvedCsvPath = Resolve-Path -LiteralPath $CsvFilePath
@@ -38,7 +38,7 @@ $csvObj = Import-Csv $resolvedCsvPath -Delimiter ','
 
 $ErrorActionPreference = "Stop"
 
-foreach ($csvItem in $csvObj)
+Function StartUpdatePropertiesJobItem($csvItem)
 {
     $subscriptionId = $csvItem.VAULT_SUBSCRIPTION_ID
 
@@ -111,5 +111,16 @@ foreach ($csvItem in $csvObj)
     LogTrace "Update machine properties job created"
 }
 
-LogTrace("[FINISH]-Finishing Asr Replication")
+foreach ($csvItem in $csvObj)
+{
+    try {
+        StartUpdatePropertiesJobItem -csvItem $csvItem
+    } catch {
+        LogError "Exception creating update properties job"
+        $exceptionMessage = $_ | Out-String
+        LogError $exceptionMessage
+    }
+}
+
+LogTrace("[FINISH]-Finishing Asr update properties")
 
