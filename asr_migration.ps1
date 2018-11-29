@@ -15,6 +15,13 @@ Function LogError([string] $Message)
     Write-Host $logMessage
 }
 
+Function LogErrorAndThrow([string] $Message)
+{
+    $logMessage = [string]::Concat($logDate, "[ERROR]-", $Message)
+    Write-Output $logMessage
+    Write-Error $logMessage
+}
+
 Function LogTrace([string] $Message)
 {
     $logMessage = [string]::Concat($logDate, "[LOG]-", $Message)
@@ -39,9 +46,11 @@ Function StartReplicationJobItem($csvItem)
     if ($currentSubscription.Id -ne $subscriptionId)
     {
         Set-AzureRmContext -Subscription $subscriptionId
+        $currentContext = Get-AzureRmContext
+        $currentSubscription = $currentContext.Subscription
         if ($currentSubscription.Id -ne $subscriptionId)
         {
-            LogError "SubscriptionId '$($subscriptionId)' is not selected as current default subscription"
+            LogErrorAndThrow "SubscriptionId '$($subscriptionId)' is not selected as current default subscription"
         }
     }
 
@@ -78,7 +87,7 @@ Function StartReplicationJobItem($csvItem)
     $targetVault = Get-AzureRmRecoveryServicesVault -Name $vaultName
     if ($targetVault -eq $null)
     {
-        LogError "Vault with name '$($vaultName)' unable to find"
+        LogErrorAndThrow "Unable to find Vault with name '$($vaultName)'"
     }
 
     Set-AzureRmRecoveryServicesAsrVaultContext -Vault $targetVault
@@ -97,10 +106,22 @@ Function StartReplicationJobItem($csvItem)
         -Name $targetPostFailoverVNET `
         -ResourceGroupName $targetPostFailoverResourceGroup 
     $targetPolicyMap  =  Get-AzureRmRecoveryServicesAsrProtectionContainerMapping `
-        -ProtectionContainer $protectionContainer | where PolicyFriendlyName -eq $replicationPolicy
+        -ProtectionContainer $protectionContainer | Where-Object { $_.PolicyFriendlyName -eq $replicationPolicy }
+    if ($targetPolicyMap -eq $null)
+    {
+        LogErrorAndThrow "Policy map '$($replicationPolicy)' was not found"
+    }
     $protectableVM = Get-AzureRmRecoveryServicesAsrProtectableItem -ProtectionContainer $protectionContainer -FriendlyName $sourceMachineName
     $sourceProcessServerObj = $fabricServer.FabricSpecificDetails.ProcessServers | Where-Object { $_.FriendlyName -eq $sourceProcessServer }
+    if ($sourceProcessServerObj -eq $null)
+    {
+        LogErrorAndThrow "Process server with name '$($sourceProcessServer)' was not found"
+    }
     $sourceAccountObj = $fabricServer.FabricSpecificDetails.RunAsAccounts | Where-Object { $_.AccountName -eq $sourceAccountName }
+    if ($sourceAccountObj -eq $null)
+    {
+        LogErrorAndThrow "Account name '$($sourceAccountName)' was not found"
+    }
 
     LogTrace "Starting replication Job for source '$($sourceMachineName)'"
     $replicationJob = New-AzureRmRecoveryServicesAsrReplicationProtectedItem `
