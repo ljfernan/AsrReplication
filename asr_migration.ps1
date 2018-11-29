@@ -5,11 +5,9 @@ Param(
     $CsvFilePath
 )
 
-$migrationDate = Get-Date
-$logDate = $migrationDate.ToString("MM/dd/yyyy HH:mm:ss")
-
 Function LogError([string] $Message)
 {
+    $logDate = (Get-Date).ToString("MM/dd/yyyy HH:mm:ss")
     $logMessage = [string]::Concat($logDate, "[ERROR]-", $Message)
     Write-Output $logMessage
     Write-Host $logMessage
@@ -17,6 +15,7 @@ Function LogError([string] $Message)
 
 Function LogErrorAndThrow([string] $Message)
 {
+    $logDate = (Get-Date).ToString("MM/dd/yyyy HH:mm:ss")
     $logMessage = [string]::Concat($logDate, "[ERROR]-", $Message)
     Write-Output $logMessage
     Write-Error $logMessage
@@ -24,6 +23,7 @@ Function LogErrorAndThrow([string] $Message)
 
 Function LogTrace([string] $Message)
 {
+    $logDate = (Get-Date).ToString("MM/dd/yyyy HH:mm:ss")
     $logMessage = [string]::Concat($logDate, "[LOG]-", $Message)
     Write-Output $logMessage
     Write-Host $logMessage
