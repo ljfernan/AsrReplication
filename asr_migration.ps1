@@ -81,6 +81,8 @@ Function StartReplicationJobItem($csvItem)
     $targetPrivateIP = $csvItem.PRIVATE_IP
     $targetMachineSize = $csvItem.MACHINE_SIZE
     $targetMachineName = $csvItem.TARGET_MACHINE_NAME
+    $targetStorageAccountRG = $csvItem.TARGET_STORAGE_ACCOUNT_RG
+    $targetVNETRG = $csvItem.TARGET_VNET_RG
 
     #Print replication settings
     LogTrace "[REPLICATIONJOB SETTINGS]-$($sourceMachineName)"
@@ -116,12 +118,12 @@ Function StartReplicationJobItem($csvItem)
     #Assumption storage are already created
     $targetPostFailoverStorageAccount = Get-AzureRmStorageAccount `
         -Name $targetPostFailoverStorageAccountName `
-        -ResourceGroupName $targetPostFailoverResourceGroup
+        -ResourceGroupName $targetStorageAccountRG
 
     $targetResourceGroupObj = Get-AzureRmResourceGroup -Name $targetPostFailoverResourceGroup
     $targetVnetObj = Get-AzureRmVirtualNetwork `
         -Name $targetPostFailoverVNET `
-        -ResourceGroupName $targetPostFailoverResourceGroup 
+        -ResourceGroupName $targetVNETRG 
     $targetPolicyMap  =  Get-AzureRmRecoveryServicesAsrProtectionContainerMapping `
         -ProtectionContainer $protectionContainer | Where-Object { $_.PolicyFriendlyName -eq $replicationPolicy }
     if ($targetPolicyMap -eq $null)
