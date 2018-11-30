@@ -86,6 +86,8 @@ Function GetProtectedItemStatus($csvItem)
     $targetMachineName = $csvItem.TARGET_MACHINE_NAME
     $targetTestFailoverVNET = $csvItem.TESTFAILOVER_VNET
     $targetTestFailoverResourceGroup = $csvItem.TESTFAILOVER_RESOURCE_GROUP
+    $targetStorageAccountRG = $csvItem.TARGET_STORAGE_ACCOUNT_RG
+    $targetVNETRG = $csvItem.TARGET_VNET_RG
 
     #Print replication settings
     LogTrace "[REPLICATIONJOB SETTINGS]-$($sourceMachineName)"
@@ -134,7 +136,7 @@ Function GetProtectedItemStatus($csvItem)
             #Get details of the test failover virtual network to be used
             $targetTestFailoverVNETObj = Get-AzureRmVirtualNetwork `
                 -Name $targetTestFailoverVNET `
-                -ResourceGroupName $targetTestFailoverResourceGroup 
+                -ResourceGroupName $targetVNETRG 
 
             #Start the test failover operation
             $testFailoverJob = Start-AzureRmRecoveryServicesAsrTestFailoverJob `
