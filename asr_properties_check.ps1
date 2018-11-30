@@ -122,6 +122,8 @@ Function GetProtectedItemStatus($csvItem)
     LogTrace "TargetAvailabilitySet=$($targetAvailabilitySet)"
     LogTrace "TargetPrivateIP=$($targetPrivateIP)"
     LogTrace "TargetMachineSize=$($targetMachineSize)"
+    LogTrace "targetStorageAccountRG=$($targetStorageAccountRG)"
+    LogTrace "targetVNETRG=$($targetVNETRG)"
 
     $statusItemInfo = [CheckInformation]::new()
     $statusItemInfo.Machine = $sourceMachineName
