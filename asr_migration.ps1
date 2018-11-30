@@ -163,11 +163,11 @@ Function StartReplicationJobItem($csvItem)
             -RecoveryVmName $targetMachineName
 
         $replicationJobObj = Get-AzureRmRecoveryServicesAsrJob -Name $replicationJob.Name
-        $statusItemInfo.ReplicationJobId = replicationJobObj.Name
         while ($replicationJobObj.State -eq 'NotStarted') {
             Write-Host "." -NoNewline 
             $replicationJobObj = Get-AzureRmRecoveryServicesAsrJob -Name $replicationJob.Name
         }
+        $statusItemInfo.ReplicationJobId = replicationJob.Name
 
         if ($replicationJobObj.State -eq 'Failed')
         {
