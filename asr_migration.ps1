@@ -99,7 +99,9 @@ Function StartReplicationJobItem($csvItem)
     LogTrace "TargetAvailabilitySet=$($targetAvailabilitySet)"
     LogTrace "TargetPrivateIP=$($targetPrivateIP)"
     LogTrace "TargetMachineSize=$($targetMachineSize)"
-
+    LogTrace "targetStorageAccountRG=$($targetStorageAccountRG)"
+    LogTrace "targetVNETRG=$($targetVNETRG)"
+    
     $statusItemInfo = [ReplicationInformation]::new()
     $statusItemInfo.Machine = $sourceMachineName
 

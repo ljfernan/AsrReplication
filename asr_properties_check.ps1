@@ -104,6 +104,8 @@ Function GetProtectedItemStatus($csvItem)
     $targetPrivateIP = $csvItem.PRIVATE_IP
     $targetMachineSize = $csvItem.MACHINE_SIZE
     $targetMachineName = $csvItem.TARGET_MACHINE_NAME
+    $targetStorageAccountRG = $csvItem.TARGET_STORAGE_ACCOUNT_RG
+    $targetVNETRG = $csvItem.TARGET_VNET_RG
 
     #Print replication settings
     LogTrace "[REPLICATIONJOB SETTINGS]-$($sourceMachineName)"
