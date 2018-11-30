@@ -109,22 +109,33 @@ Function StartUpdatePropertiesJobItem($csvItem)
     
     if ($protectedItem.ProtectionState -eq 'Protected')
     {
-        $nicDetails = $protectedItem.NicDetailsList[0]
-        
-        $targetAvailabilitySetObj = Get-AzureRmAvailabilitySet `
-            -ResourceGroupName $targetPostFailoverResourceGroup `
-            -Name $targetAvailabilitySet
-
         LogTrace "Creating job to set machine properties..."
-        $updatePropertiesJob = Set-AzureRmRecoveryServicesAsrReplicationProtectedItem `
-            -InputObject $protectedItem `
-            -PrimaryNic $nicDetails.NicId `
-            -RecoveryNicStaticIPAddress $targetPrivateIP `
-            -RecoveryNetworkId $nicdetails.RecoveryVMNetworkId `
-            -RecoveryNicSubnetName $nicdetails.RecoveryVMSubnetName `
-            -UseManagedDisk $False `
-            -RecoveryAvailabilitySet $targetAvailabilitySetObj.Id `
-            -Size $targetMachineSize
+        $nicDetails = $protectedItem.NicDetailsList[0]
+        if (($targetAvailabilitySet -eq '') -or ($targetAvailabilitySet -eq $null))
+        {
+            $updatePropertiesJob = Set-AzureRmRecoveryServicesAsrReplicationProtectedItem `
+                -InputObject $protectedItem `
+                -PrimaryNic $nicDetails.NicId `
+                -RecoveryNicStaticIPAddress $targetPrivateIP `
+                -RecoveryNetworkId $nicdetails.RecoveryVMNetworkId `
+                -RecoveryNicSubnetName $nicdetails.RecoveryVMSubnetName `
+                -UseManagedDisk $False `
+                -Size $targetMachineSize
+        } else {
+            $targetAvailabilitySetObj = Get-AzureRmAvailabilitySet `
+                -ResourceGroupName $targetPostFailoverResourceGroup `
+                -Name $targetAvailabilitySet
+
+            $updatePropertiesJob = Set-AzureRmRecoveryServicesAsrReplicationProtectedItem `
+                -InputObject $protectedItem `
+                -PrimaryNic $nicDetails.NicId `
+                -RecoveryNicStaticIPAddress $targetPrivateIP `
+                -RecoveryNetworkId $nicdetails.RecoveryVMNetworkId `
+                -RecoveryNicSubnetName $nicdetails.RecoveryVMSubnetName `
+                -UseManagedDisk $False `
+                -RecoveryAvailabilitySet $targetAvailabilitySetObj.Id `
+                -Size $targetMachineSize
+        }
 
         if ($updatePropertiesJob -eq $null)
         {

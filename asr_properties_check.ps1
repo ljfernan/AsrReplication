@@ -192,11 +192,17 @@ Function GetProtectedItemStatus($csvItem)
         # #$resourceRawData.Properties.providerSpecificDetails.recoveryAvailabilitySetId
         # $statusItemInfo.targetAvailabilitySet = "DONE"
         try {
-            $targetAvailabilitySetObj = Get-AzureRmAvailabilitySet `
-                -ResourceGroupName $targetPostFailoverResourceGroup `
-                -Name $targetAvailabilitySet
-            CheckParameter 'AVAILABILITY_SET' $targetAvailabilitySetObj.Id $resourceRawData.Properties.providerSpecificDetails.recoveryAvailabilitySetId
-            $statusItemInfo.TargetAvailabilitySetCheck = "DONE"
+            $actualAvailabilitySet = $resourceRawData.Properties.providerSpecificDetails.recoveryAvailabilitySetId
+            if ($targetAvailabilitySet -eq '' -and $actualAvailabilitySet -eq '')
+            {
+                $statusItemInfo.TargetAvailabilitySetCheck = "DONE"
+            } else {
+                $targetAvailabilitySetObj = Get-AzureRmAvailabilitySet `
+                    -ResourceGroupName $targetPostFailoverResourceGroup `
+                    -Name $targetAvailabilitySet
+                CheckParameter 'AVAILABILITY_SET' $targetAvailabilitySetObj.Id $actualAvailabilitySet
+                $statusItemInfo.TargetAvailabilitySetCheck = "DONE"
+            }
         }
         catch {
             $statusItemInfo.TargetAvailabilitySetCheck = "ERROR"
