@@ -35,7 +35,21 @@ LogTrace "File: $CsvFilePath"
 $resolvedCsvPath = Resolve-Path -LiteralPath $CsvFilePath
 $csvObj = Import-Csv $resolvedCsvPath -Delimiter ','
 
+$CsvOutput = [string]::Concat($resolvedCsvPath.Path, ".migration.", (Get-Date).ToString("ddMMyyyy_HHmmss"), ".output.csv")
+
 $ErrorActionPreference = "Stop"
+
+class ReplicationInformation
+{
+    [string]$Machine
+    [string]$ProtectableStatus
+    [string]$ProtectionState
+    [string]$ProtectionStateDescription
+    [string]$Exception
+    [string]$ReplicationJobId
+}
+
+$protectedItemStatusArray = New-Object System.Collections.Generic.List[System.Object]
 
 Function StartReplicationJobItem($csvItem)
 {
@@ -84,6 +98,9 @@ Function StartReplicationJobItem($csvItem)
     LogTrace "TargetPrivateIP=$($targetPrivateIP)"
     LogTrace "TargetMachineSize=$($targetMachineSize)"
 
+    $statusItemInfo = [ReplicationInformation]::new()
+    $statusItemInfo.Machine = $sourceMachineName
+
     $targetVault = Get-AzureRmRecoveryServicesVault -Name $vaultName
     if ($targetVault -eq $null)
     {
@@ -112,48 +129,61 @@ Function StartReplicationJobItem($csvItem)
         LogErrorAndThrow "Policy map '$($replicationPolicy)' was not found"
     }
     $protectableVM = Get-AzureRmRecoveryServicesAsrProtectableItem -ProtectionContainer $protectionContainer -FriendlyName $sourceMachineName
-    $sourceProcessServerObj = $fabricServer.FabricSpecificDetails.ProcessServers | Where-Object { $_.FriendlyName -eq $sourceProcessServer }
-    if ($sourceProcessServerObj -eq $null)
-    {
-        LogErrorAndThrow "Process server with name '$($sourceProcessServer)' was not found"
-    }
-    $sourceAccountObj = $fabricServer.FabricSpecificDetails.RunAsAccounts | Where-Object { $_.AccountName -eq $sourceAccountName }
-    if ($sourceAccountObj -eq $null)
-    {
-        LogErrorAndThrow "Account name '$($sourceAccountName)' was not found"
-    }
+    $statusItemInfo.ProtectableStatus = $protectableVM.ProtectionStatus
 
-    LogTrace "Starting replication Job for source '$($sourceMachineName)'"
-    $replicationJob = New-AzureRmRecoveryServicesAsrReplicationProtectedItem `
-        -VMwareToAzure `
-        -ProtectableItem $protectableVM `
-        -Name (New-Guid).Guid `
-        -ProtectionContainerMapping $targetPolicyMap `
-        -RecoveryAzureStorageAccountId $targetPostFailoverStorageAccount.Id `
-        -ProcessServer $sourceProcessServerObj `
-        -Account $sourceAccountObj `
-        -RecoveryResourceGroupId $targetResourceGroupObj.ResourceId `
-        -RecoveryAzureNetworkId $targetVnetObj.Id `
-        -RecoveryAzureSubnetName $targetPostFailoverSubnet `
-        -RecoveryVmName $targetMachineName
-
-    $replicationJobObj = Get-AzureRmRecoveryServicesAsrJob -Name $replicationJob.Name
-    while ($replicationJobObj.State -eq 'NotStarted') {
-        Write-Host "." -NoNewline 
-        $replicationJobObj = Get-AzureRmRecoveryServicesAsrJob -Name $replicationJob.Name
-    }
-
-    if ($replicationJobObj.State -eq 'Failed')
+    if ($protectableVM.ReplicationProtectedItemId -eq $null)
     {
-        LogError "Error starting replication job"
-        foreach ($replicationJobError in $replicationJobObj.Errors)
+        $sourceProcessServerObj = $fabricServer.FabricSpecificDetails.ProcessServers | Where-Object { $_.FriendlyName -eq $sourceProcessServer }
+        if ($sourceProcessServerObj -eq $null)
         {
-            LogError $replicationJobError.ServiceErrorDetails.Message
-            LogError $replicationJobError.ServiceErrorDetails.PossibleCauses
+            LogErrorAndThrow "Process server with name '$($sourceProcessServer)' was not found"
+        }
+        $sourceAccountObj = $fabricServer.FabricSpecificDetails.RunAsAccounts | Where-Object { $_.AccountName -eq $sourceAccountName }
+        if ($sourceAccountObj -eq $null)
+        {
+            LogErrorAndThrow "Account name '$($sourceAccountName)' was not found"
+        }
+
+        LogTrace "Starting replication Job for source '$($sourceMachineName)'"
+        $replicationJob = New-AzureRmRecoveryServicesAsrReplicationProtectedItem `
+            -VMwareToAzure `
+            -ProtectableItem $protectableVM `
+            -Name (New-Guid).Guid `
+            -ProtectionContainerMapping $targetPolicyMap `
+            -RecoveryAzureStorageAccountId $targetPostFailoverStorageAccount.Id `
+            -ProcessServer $sourceProcessServerObj `
+            -Account $sourceAccountObj `
+            -RecoveryResourceGroupId $targetResourceGroupObj.ResourceId `
+            -RecoveryAzureNetworkId $targetVnetObj.Id `
+            -RecoveryAzureSubnetName $targetPostFailoverSubnet `
+            -RecoveryVmName $targetMachineName
+
+        $replicationJobObj = Get-AzureRmRecoveryServicesAsrJob -Name $replicationJob.Name
+        $statusItemInfo.ReplicationJobId = replicationJobObj.Name
+        while ($replicationJobObj.State -eq 'NotStarted') {
+            Write-Host "." -NoNewline 
+            $replicationJobObj = Get-AzureRmRecoveryServicesAsrJob -Name $replicationJob.Name
+        }
+
+        if ($replicationJobObj.State -eq 'Failed')
+        {
+            LogError "Error starting replication job"
+            foreach ($replicationJobError in $replicationJobObj.Errors)
+            {
+                LogError $replicationJobError.ServiceErrorDetails.Message
+                LogError $replicationJobError.ServiceErrorDetails.PossibleCauses
+            }
+        } else {
+            LogTrace "ReplicationJob initiated"        
         }
     } else {
-        LogTrace "ReplicationJob initiated"        
+        $protectedItem = Get-AzureRmRecoveryServicesAsrReplicationProtectedItem `
+            -ProtectionContainer $protectionContainer `
+            -FriendlyName $sourceMachineName
+        $statusItemInfo.ProtectionState = $protectedItem.ProtectionState
+        $statusItemInfo.ProtectionStateDescription = $protectedItem.ProtectionStateDescription
     }
+    $protectedItemStatusArray.Add($statusItemInfo)
 }
 
 foreach ($csvItem in $csvObj)
@@ -163,8 +193,16 @@ foreach ($csvItem in $csvObj)
     } catch {
         LogError "Exception creating replication job"
         $exceptionMessage = $_ | Out-String
+
+        $statusItemInfo = [ReplicationInformation]::new()
+        $statusItemInfo.Machine = $csvItem.SOURCE_MACHINE_NAME
+        $statusItemInfo.Exception = "ERROR PROCESSING ITEM" 
+        $protectedItemStatusArray.Add($statusItemInfo)
+
         LogError $exceptionMessage
     }
 }
+
+$protectedItemStatusArray.ToArray() | Export-Csv -LiteralPath $CsvOutput -Delimiter ',' -NoTypeInformation
 
 LogTrace "[FINISH]-Finishing Asr Replication"

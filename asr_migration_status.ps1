@@ -3,9 +3,7 @@
 #Connect-AzureRmAccount
 Param(
     [parameter(Mandatory=$true)]
-    $CsvFilePath,
-    [parameter(Mandatory=$true)]
-    $CsvOutput
+    $CsvFilePath
 )
 
 Function LogError([string] $Message)
@@ -37,6 +35,8 @@ LogTrace("File: $($CsvFilePath)")
 
 $resolvedCsvPath = Resolve-Path -LiteralPath $CsvFilePath
 $csvObj = Import-Csv $resolvedCsvPath -Delimiter ','
+
+$CsvOutput = [string]::Concat($resolvedCsvPath.Path, ".replicationstatus.", (Get-Date).ToString("ddMMyyyy_HHmmss"), ".output.csv")
 
 $ErrorActionPreference = "Stop"
 

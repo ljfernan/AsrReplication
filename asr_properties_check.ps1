@@ -3,9 +3,7 @@
 #Connect-AzureRmAccount
 Param(
     [parameter(Mandatory=$true)]
-    $CsvFilePath,
-    [parameter(Mandatory=$true)]
-    $CsvOutput
+    $CsvFilePath
 )
 
 Function LogError([string] $Message)
@@ -37,6 +35,8 @@ LogTrace("File: $($CsvFilePath)")
 
 $resolvedCsvPath = Resolve-Path -LiteralPath $CsvFilePath
 $csvObj = Import-Csv $resolvedCsvPath -Delimiter ','
+
+$CsvOutput = [string]::Concat($resolvedCsvPath.Path, ".propertiescheck.", (Get-Date).ToString("ddMMyyyy_HHmmss"), ".output.csv")
 
 $ErrorActionPreference = "Stop"
 
@@ -192,7 +192,10 @@ Function GetProtectedItemStatus($csvItem)
         # #$resourceRawData.Properties.providerSpecificDetails.recoveryAvailabilitySetId
         # $statusItemInfo.targetAvailabilitySet = "DONE"
         try {
-            CheckParameter 'AVAILABILITY_SET' $targetAvailabilitySet $resourceRawData.Properties.providerSpecificDetails.recoveryAvailabilitySetId
+            $targetAvailabilitySetObj = Get-AzureRmAvailabilitySet `
+                -ResourceGroupName $targetPostFailoverResourceGroup `
+                -Name $targetAvailabilitySet
+            CheckParameter 'AVAILABILITY_SET' $targetAvailabilitySetObj.Id $resourceRawData.Properties.providerSpecificDetails.recoveryAvailabilitySetId
             $statusItemInfo.TargetAvailabilitySetCheck = "DONE"
         }
         catch {
