@@ -77,14 +77,14 @@ Function GetProtectedItemStatus($csvItem)
     $targetAvailabilitySet = $csvItem.AVAILABILITY_SET
     $targetPrivateIP = $csvItem.PRIVATE_IP
     $targetMachineSize = $csvItem.MACHINE_SIZE
-    $sourceProcessServer = $csvItem.PROCESS_SERVER
+    $sourceConfigurationServer = $csvItem.CONFIGURATION_SERVER
     $targetPostFailoverResourceGroup = $csvItem.TARGET_RESOURCE_GROUP
 
     #Print replication settings
     LogTrace("[REPLICATIONJOB]-$($sourceMachineName)")
     LogTrace("SubscriptionId=$($subscriptionId)")
     LogTrace("SourceMachineName=$($sourceMachineName)")
-    LogTrace("SourceProcessServer=$($sourceProcessServer)")
+    LogTrace "SourceConfigurationServer=$($sourceConfigurationServer)"
     LogTrace("VaultName=$($vaultName)")
     LogTrace("TargetAvailabilitySet=$($targetAvailabilitySet)")
     LogTrace("TargetResourceGroup=$($targetPostFailoverResourceGroup)")
@@ -102,7 +102,7 @@ Function GetProtectedItemStatus($csvItem)
 
     Set-AzureRmRecoveryServicesAsrVaultContext -Vault $targetVault
 
-    $fabricServer = Get-AzureRmRecoveryServicesAsrFabric -FriendlyName $sourceProcessServer
+    $fabricServer = Get-AzureRmRecoveryServicesAsrFabric -FriendlyName $sourceConfigurationServer
     $protectionContainer = Get-AzureRmRecoveryServicesAsrProtectionContainer -Fabric $fabricServer
     
     $protectableVM = Get-AzureRmRecoveryServicesAsrProtectableItem `

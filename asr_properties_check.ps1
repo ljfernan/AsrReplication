@@ -50,7 +50,7 @@ class CheckInformation
     [string]$Machine
     [string]$Exception
     [string]$VaultNameCheck
-    [string]$SourceProcessServerCheck
+    [string]$SourceConfigurationServerCheck
     [string]$SourceMachineNameCheck
     [string]$TargetPostFailoverResourceGroupCheck
     [string]$TargetPostFailoverStorageAccountNameCheck
@@ -93,7 +93,7 @@ Function GetProtectedItemStatus($csvItem)
 
     $vaultName = $csvItem.VAULT_NAME
     $sourceAccountName = $csvItem.ACCOUNT_NAME
-    $sourceProcessServer = $csvItem.PROCESS_SERVER
+    $sourceConfigurationServer = $csvItem.CONFIGURATION_SERVER
     $targetPostFailoverResourceGroup = $csvItem.TARGET_RESOURCE_GROUP
     $targetPostFailoverStorageAccountName = $csvItem.TARGET_STORAGE_ACCOUNT
     $targetPostFailoverVNET = $csvItem.TARGET_VNET
@@ -112,6 +112,7 @@ Function GetProtectedItemStatus($csvItem)
     LogTrace "SourceMachineName=$($sourceMachineName)"
     LogTrace "TargetMachineName=$($targetMachineName)"
     LogTrace "VaultName=$($vaultName)"
+    LogTrace "SourceConfigurationServer=$($sourceConfigurationServer)"
     LogTrace "AccountName=$($sourceAccountName)"
     LogTrace "TargetPostFailoverResourceGroup=$($targetPostFailoverResourceGroup)"
     LogTrace "TargetPostFailoverStorageAccountName=$($targetPostFailoverStorageAccountName)"
@@ -137,9 +138,9 @@ Function GetProtectedItemStatus($csvItem)
 
     Set-AzureRmRecoveryServicesAsrVaultContext -Vault $targetVault
 
-    $fabricServer = Get-AzureRmRecoveryServicesAsrFabric -FriendlyName $sourceProcessServer
+    $fabricServer = Get-AzureRmRecoveryServicesAsrFabric -FriendlyName $sourceConfigurationServer
     $protectionContainer = Get-AzureRmRecoveryServicesAsrProtectionContainer -Fabric $fabricServer
-    $statusItemInfo.SourceProcessServerCheck = "DONE"
+    $statusItemInfo.SourceConfigurationServerCheck = "DONE"
     
     $protectableVM = Get-AzureRmRecoveryServicesAsrProtectableItem `
         -ProtectionContainer $protectionContainer `
