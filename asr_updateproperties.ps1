@@ -75,6 +75,7 @@ Function StartUpdatePropertiesJobItem($csvItem)
     $targetMachineSize = $csvItem.MACHINE_SIZE
     $sourceConfigurationServer = $csvItem.CONFIGURATION_SERVER
     $targetPostFailoverResourceGroup = $csvItem.TARGET_RESOURCE_GROUP
+    $targetSubnet = $csvItem.TARGET_SUBNET
 
     #Print replication settings
     LogTrace("[REPLICATIONJOB]-$($sourceMachineName)")
@@ -86,6 +87,7 @@ Function StartUpdatePropertiesJobItem($csvItem)
     LogTrace("TargetResourceGroup=$($targetPostFailoverResourceGroup)")
     LogTrace("TargetPrivateIP=$($targetPrivateIP)")
     LogTrace("TargetMachineSize=$($targetMachineSize)")
+    LogTrace("TargetSubnet=$($targetSubnet)")
 
     $statusItemInfo = [UpdatePropertiesInformation]::new()
     $statusItemInfo.Machine = $sourceMachineName
@@ -118,7 +120,7 @@ Function StartUpdatePropertiesJobItem($csvItem)
                 -PrimaryNic $nicDetails.NicId `
                 -RecoveryNicStaticIPAddress $targetPrivateIP `
                 -RecoveryNetworkId $nicdetails.RecoveryVMNetworkId `
-                -RecoveryNicSubnetName $nicdetails.RecoveryVMSubnetName `
+                -RecoveryNicSubnetName $targetSubnet `
                 -UseManagedDisk $False `
                 -Size $targetMachineSize
         } else {
@@ -131,7 +133,7 @@ Function StartUpdatePropertiesJobItem($csvItem)
                 -PrimaryNic $nicDetails.NicId `
                 -RecoveryNicStaticIPAddress $targetPrivateIP `
                 -RecoveryNetworkId $nicdetails.RecoveryVMNetworkId `
-                -RecoveryNicSubnetName $nicdetails.RecoveryVMSubnetName `
+                -RecoveryNicSubnetName $targetSubnet `
                 -UseManagedDisk $False `
                 -RecoveryAvailabilitySet $targetAvailabilitySetObj.Id `
                 -Size $targetMachineSize
