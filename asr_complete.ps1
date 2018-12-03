@@ -3,7 +3,8 @@
 #Connect-AzureRmAccount
 Param(
     [parameter(Mandatory=$true)]
-    $CsvFilePath
+    $CsvFilePath,
+    $TimeOutInCommitJobInSeconds = 120
 )
 
 Function LogError([string] $Message)
@@ -30,13 +31,13 @@ Function LogTrace([string] $Message)
     Write-Host $logMessage
 }
 
-LogTrace("[START]-Checking properties")
+LogTrace("[START]-Complete")
 LogTrace("File: $($CsvFilePath)")
 
 $resolvedCsvPath = Resolve-Path -LiteralPath $CsvFilePath
 $csvObj = Import-Csv $resolvedCsvPath -Delimiter ','
 
-$CsvOutput = [string]::Concat($resolvedCsvPath.Path, ".testfailover.", (Get-Date).ToString("ddMMyyyy_HHmmss"), ".output.csv")
+$CsvOutput = [string]::Concat($resolvedCsvPath.Path, ".complete.", (Get-Date).ToString("ddMMyyyy_HHmmss"), ".output.csv")
 
 $ErrorActionPreference = "Stop"
 
@@ -45,13 +46,12 @@ $protectedItemStatusArray = New-Object System.Collections.Generic.List[System.Ob
 # $statusItemInfo | Add-Member -type NoteProperty -Name 'Machine' -Value $sourceMachineName
 # $protectedItemStatusArray +=$statusItemInfo
 
-class TestFailOverInformation
+class CompleteReplicationInformation
 {
     [string]$Machine
     [string]$Exception
-    [string]$TestFailoverJobId
-    [string]$TestFailoverState
-    [string]$TestFailoverStateDescription
+    [string]$CommitJobId
+    [string]$DisableReplicationJobId
 }
 
 Function GetProtectedItemStatus($csvItem)
@@ -86,8 +86,6 @@ Function GetProtectedItemStatus($csvItem)
     $targetMachineName = $csvItem.TARGET_MACHINE_NAME
     $targetTestFailoverVNET = $csvItem.TESTFAILOVER_VNET
     $targetTestFailoverResourceGroup = $csvItem.TESTFAILOVER_RESOURCE_GROUP
-    $targetStorageAccountRG = $csvItem.TARGET_STORAGE_ACCOUNT_RG
-    $targetVNETRG = $csvItem.TARGET_VNET_RG
 
     #Print replication settings
     LogTrace "[REPLICATIONJOB SETTINGS]-$($sourceMachineName)"
@@ -108,7 +106,7 @@ Function GetProtectedItemStatus($csvItem)
     LogTrace "TargetTestFailoverVNET=$($targetTestFailoverVNET)"
     LogTrace "TargetTestFailoverResourceGroup=$($targetTestFailoverResourceGroup)"
 
-    $statusItemInfo = [TestFailOverInformation]::new()
+    $statusItemInfo = [CompleteReplicationInformation]::new()
     $statusItemInfo.Machine = $sourceMachineName
 
     $targetVault = Get-AzureRmRecoveryServicesVault -Name $vaultName
@@ -131,25 +129,41 @@ Function GetProtectedItemStatus($csvItem)
         $protectedItem = Get-AzureRmRecoveryServicesAsrReplicationProtectedItem `
             -ProtectionContainer $protectionContainer `
             -FriendlyName $sourceMachineName
-        
-        if ($protectedItem.AllowedOperations.Contains('TestFailover'))
-        {
-            #Get details of the test failover virtual network to be used
-            $targetTestFailoverVNETObj = Get-AzureRmVirtualNetwork `
-                -Name $targetTestFailoverVNET `
-                -ResourceGroupName $targetVNETRG 
 
-            #Start the test failover operation
-            $testFailoverJob = Start-AzureRmRecoveryServicesAsrTestFailoverJob `
-                -ReplicationProtectedItem $protectedItem `
-                -AzureVMNetworkId $targetTestFailoverVNETObj.Id `
-                -Direction PrimaryToRecovery
-            $statusItemInfo.TestFailoverJobId = $testFailoverJob.ID
+        if ($protectedItem.AllowedOperations.Contains('Commit'))
+        {
+            #Start the failover operation
+            $commitFailoverJob = Start-AzureRmRecoveryServicesAsrCommitFailoverJob `
+                -ReplicationProtectedItem $protectedItem
+            $initialStartDate = Get-Date
+            while (($commitFailoverJob.State -ne 'Succeeded') -and ($diffInMilliseconds -le $TimeOutInCommitJobInSeconds)) {
+                Write-Host "." -NoNewline 
+                $commitFailoverJob = Get-AzureRmRecoveryServicesAsrJob -Name $commitFailoverJob.Name
+                $currentDate = Get-Date
+
+                $diff = $currentDate - $initialStartDate
+                $diffInMilliseconds = $diff.TotalSeconds
+            }
+            $statusItemInfo.CommitJobId = $commitFailoverJob.ID
+            if ($commitFailoverJob.State -ne 'Succeeded')
+            {
+                LogErrorAndThrow "Commit job did not reach 'Succeeded' status in a timely manner, DisableProtection will not be executed for '$($sourceMachineName)' "
+            }
         } else {
-            LogTrace "TestFailover operation not allowed for item '$($sourceMachineName)'"
-            $statusItemInfo.TestFailoverState = $protectedItem.TestFailoverState
-            $statusItemInfo.TestFailoverStateDescription = $protectedItem.TestFailoverStateDescription
+            LogTrace "Commit operation not allowed for item '$($sourceMachineName)'"
         }
+        if ($protectedItem.AllowedOperations.Contains('DisableProtection'))
+        {
+            #Start the failover operation
+            $disableReplicationJob = Remove-AzureRmRecoveryServicesAsrReplicationProtectedItem `
+                -InputObject $protectedItem
+
+            $statusItemInfo.DisableReplicationJobId = $disableReplicationJob.ID
+        } else {
+            LogTrace "DisableProtection operation not allowed for item '$($sourceMachineName)'"
+        }
+
+
     }
 
     $protectedItemStatusArray.Add($statusItemInfo)
@@ -161,10 +175,10 @@ foreach ($csvItem in $csvObj)
     try {
         GetProtectedItemStatus -csvItem $csvItem
     } catch {
-        LogError "Exception creating update properties job"
+        LogError "Exception executing item"
         $exceptionMessage = $_ | Out-String
 
-        $statusItemInfo = [TestFailOverInformation]::new()
+        $statusItemInfo = [CompleteReplicationInformation]::new()
         $statusItemInfo.Machine = $csvItem.SOURCE_MACHINE_NAME
         $statusItemInfo.Exception = "ERROR RECOVERING INFO" 
         $protectedItemStatusArray.Add($statusItemInfo)
@@ -175,5 +189,4 @@ foreach ($csvItem in $csvObj)
 
 $protectedItemStatusArray.ToArray() | Export-Csv -LiteralPath $CsvOutput -Delimiter ',' -NoTypeInformation
 
-LogTrace("[FINISH]-Finishing properties check")
-
+LogTrace("[FINISH]-Finish Complete")
