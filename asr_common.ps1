@@ -49,5 +49,3 @@ Function New-AsrCommonInstance($Logger)
 {
   return [AsrCommon]::new($Logger)
 }
-
-Export-ModuleMember -Function New-AsrCommonInstance

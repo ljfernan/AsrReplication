@@ -106,4 +106,3 @@ Function New-CsvProcessorInstance($Logger, $ProcessItemFunction)
   return [CsvProcessor]::new($logger, $processItemFunction)
 }
 
-Export-ModuleMember -Function New-CsvProcessorInstance

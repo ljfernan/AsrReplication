@@ -62,4 +62,3 @@ Function New-AsrLoggerInstance($CommandPath)
   return [MigrationLogger]::new($CommandPath)
 }
 
-Export-ModuleMember -Function New-AsrLoggerInstance

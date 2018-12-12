@@ -7,6 +7,14 @@
         {
             "type": "PowerShell",
             "request": "launch",
+            "name": "PS template",
+            "script": "${workspaceRoot}/asr_template.ps1",
+            "args": ["-CsvFilePath ./input_template.csv"],
+            "cwd": "${workspaceRoot}"
+        },
+        {
+            "type": "PowerShell",
+            "request": "launch",
             "name": "PS migration",
             "script": "${workspaceRoot}/asr_migration.ps1",
             "args": ["-CsvFilePath ./asr_migration.new.1.csv"],
@@ -25,7 +33,7 @@
             "request": "launch",
             "name": "PS status",
             "script": "${workspaceRoot}/asr_migration_status.ps1",
-            "args": ["-CsvFilePath ./asr_migration.new.1.csv"],
+            "args": ["-CsvFilePath ./input_template.csv"],
             "cwd": "${workspaceRoot}"
         },
         {

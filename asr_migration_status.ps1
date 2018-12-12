@@ -10,9 +10,9 @@ if ($PSScriptRoot -eq "") {
     $scriptsPath = "."
 }
 
-Import-Module "$scriptsPath\asr_logger.psm1"
-Import-Module "$scriptsPath\asr_common.psm1"
-Import-Module "$scriptsPath\asr_csv_processor.psm1"
+. "$scriptsPath\asr_logger.ps1"
+. "$scriptsPath\asr_common.ps1"
+. "$scriptsPath\asr_csv_processor.ps1"
 
 Function ProcessItem($processor, $csvItem, $reportItem)
 {
