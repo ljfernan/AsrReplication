@@ -1,6 +1,3 @@
-
-
-#Connect-AzureRmAccount
 Param(
     [parameter(Mandatory=$true)]
     $SubscriptionId,
@@ -63,4 +60,7 @@ if ($items.Count -gt 0)
 } else {
     Write-Host "There are no items in this container"    
 }
+
+
+
 

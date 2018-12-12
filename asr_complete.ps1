@@ -1,138 +1,33 @@
-
-
-#Connect-AzureRmAccount
 Param(
     [parameter(Mandatory=$true)]
     $CsvFilePath,
     $TimeOutInCommitJobInSeconds = 120
 )
 
-Function LogError([string] $Message)
-{
-    $logDate = (Get-Date).ToString("MM/dd/yyyy HH:mm:ss")
-    $logMessage = [string]::Concat($logDate, "[ERROR]-", $Message)
-    Write-Output $logMessage
-    Write-Host $logMessage
-}
-
-Function LogErrorAndThrow([string] $Message)
-{
-    $logDate = (Get-Date).ToString("MM/dd/yyyy HH:mm:ss")
-    $logMessage = [string]::Concat($logDate, "[ERROR]-", $Message)
-    Write-Output $logMessage
-    Write-Error $logMessage
-}
-
-Function LogTrace([string] $Message)
-{
-    $logDate = (Get-Date).ToString("MM/dd/yyyy HH:mm:ss")
-    $logMessage = [string]::Concat($logDate, "[LOG]-", $Message)
-    Write-Output $logMessage
-    Write-Host $logMessage
-}
-
-LogTrace("[START]-Complete")
-LogTrace("File: $($CsvFilePath)")
-
-$resolvedCsvPath = Resolve-Path -LiteralPath $CsvFilePath
-$csvObj = Import-Csv $resolvedCsvPath -Delimiter ','
-
-$CsvOutput = [string]::Concat($resolvedCsvPath.Path, ".complete.", (Get-Date).ToString("ddMMyyyy_HHmmss"), ".output.csv")
-
 $ErrorActionPreference = "Stop"
 
-$protectedItemStatusArray = New-Object System.Collections.Generic.List[System.Object]
-# $statusItemInfo = New-Object PSObject
-# $statusItemInfo | Add-Member -type NoteProperty -Name 'Machine' -Value $sourceMachineName
-# $protectedItemStatusArray +=$statusItemInfo
-
-class CompleteReplicationInformation
-{
-    [string]$Machine
-    [string]$Exception
-    [string]$CommitJobId
-    [string]$DisableReplicationJobId
+$scriptsPath = $PSScriptRoot
+if ($PSScriptRoot -eq "") {
+    $scriptsPath = "."
 }
 
-Function GetProtectedItemStatus($csvItem)
-{
-    $subscriptionId = $csvItem.VAULT_SUBSCRIPTION_ID
+. "$scriptsPath\asr_logger.ps1"
+. "$scriptsPath\asr_common.ps1"
+. "$scriptsPath\asr_csv_processor.ps1"
 
-    $currentContext = Get-AzureRmContext
-    $currentSubscription = $currentContext.Subscription
-    if ($currentSubscription.Id -ne $subscriptionId)
-    {
-        Set-AzureRmContext -Subscription $subscriptionId
-        $currentContext = Get-AzureRmContext
-        $currentSubscription = $currentContext.Subscription
-        if ($currentSubscription.Id -ne $subscriptionId)
-        {
-            LogErrorAndThrow("SubscriptionId '$($subscriptionId)' is not selected as current default subscription")
-        }
-    }
+Function ProcessItemImpl($processor, $csvItem, $reportItem) {
+    $reportItem | Add-Member NoteProperty "CommitJobId" $null
+    $reportItem | Add-Member NoteProperty "DisableReplicationJobId" $null
 
     $vaultName = $csvItem.VAULT_NAME
-    $sourceAccountName = $csvItem.ACCOUNT_NAME
     $sourceConfigurationServer = $csvItem.CONFIGURATION_SERVER
-    $targetPostFailoverResourceGroup = $csvItem.TARGET_RESOURCE_GROUP
-    $targetPostFailoverStorageAccountName = $csvItem.TARGET_STORAGE_ACCOUNT
-    $targetPostFailoverVNET = $csvItem.TARGET_VNET
-    $targetPostFailoverSubnet = $csvItem.TARGET_SUBNET
     $sourceMachineName = $csvItem.SOURCE_MACHINE_NAME
-    $replicationPolicy = $csvItem.REPLICATION_POLICY
-    $targetAvailabilitySet = $csvItem.AVAILABILITY_SET
-    $targetPrivateIP = $csvItem.PRIVATE_IP
-    $targetMachineSize = $csvItem.MACHINE_SIZE
-    $targetMachineName = $csvItem.TARGET_MACHINE_NAME
-    $targetTestFailoverVNET = $csvItem.TESTFAILOVER_VNET
-    $targetTestFailoverResourceGroup = $csvItem.TESTFAILOVER_RESOURCE_GROUP
 
-    #Print replication settings
-    LogTrace "[REPLICATIONJOB SETTINGS]-$($sourceMachineName)"
-    LogTrace "SourceMachineName=$($sourceMachineName)"
-    LogTrace "TargetMachineName=$($targetMachineName)"
-    LogTrace "VaultName=$($vaultName)"
-    LogTrace "SourceConfigurationServer=$($sourceConfigurationServer)"
-    LogTrace "AccountName=$($sourceAccountName)"
-    LogTrace "TargetPostFailoverResourceGroup=$($targetPostFailoverResourceGroup)"
-    LogTrace "TargetPostFailoverStorageAccountName=$($targetPostFailoverStorageAccountName)"
-    LogTrace "TargetPostFailoverVNET=$($targetPostFailoverVNET)"
-    LogTrace "TargetPostFailoverSubnet=$($targetPostFailoverSubnet)"
-    LogTrace "TargetPostFailoverSubnet=$($targetPostFailoverSubnet)"
-    LogTrace "ReplicationPolicy=$($replicationPolicy)"
-    LogTrace "TargetAvailabilitySet=$($targetAvailabilitySet)"
-    LogTrace "TargetPrivateIP=$($targetPrivateIP)"
-    LogTrace "TargetMachineSize=$($targetMachineSize)"
-    LogTrace "TargetTestFailoverVNET=$($targetTestFailoverVNET)"
-    LogTrace "TargetTestFailoverResourceGroup=$($targetTestFailoverResourceGroup)"
-
-    $statusItemInfo = [CompleteReplicationInformation]::new()
-    $statusItemInfo.Machine = $sourceMachineName
-
-    $targetVault = Get-AzureRmRecoveryServicesVault -Name $vaultName
-    if ($targetVault -eq $null)
-    {
-        LogError("Vault with name '$($vaultName)' unable to find")
-    }
-
-    Set-AzureRmRecoveryServicesAsrVaultContext -Vault $targetVault
-
-    $fabricServer = Get-AzureRmRecoveryServicesAsrFabric -FriendlyName $sourceConfigurationServer
-    $protectionContainer = Get-AzureRmRecoveryServicesAsrProtectionContainer -Fabric $fabricServer
-    
-    $protectableVM = Get-AzureRmRecoveryServicesAsrProtectableItem `
-        -ProtectionContainer $protectionContainer `
-        -FriendlyName $sourceMachineName
-
-    if ($protectableVM.ReplicationProtectedItemId -ne $null)
-    {
-        $protectedItem = Get-AzureRmRecoveryServicesAsrReplicationProtectedItem `
-            -ProtectionContainer $protectionContainer `
-            -FriendlyName $sourceMachineName
-
-        if ($protectedItem.AllowedOperations.Contains('Commit'))
-        {
+    $protectedItem = $asrCommon.GetProtectedItemFromVault($vaultName, $sourceMachineName, $sourceConfigurationServer)
+    if ($protectedItem -ne $null) {
+        if ($protectedItem.AllowedOperations.Contains('Commit')) {
             #Start the failover operation
+            $processor.Logger.LogTrace("Starting Commit operation for item '$($sourceMachineName)'")
             $commitFailoverJob = Start-AzureRmRecoveryServicesAsrCommitFailoverJob `
                 -ReplicationProtectedItem $protectedItem
             $initialStartDate = Get-Date
@@ -144,49 +39,38 @@ Function GetProtectedItemStatus($csvItem)
                 $diff = $currentDate - $initialStartDate
                 $diffInMilliseconds = $diff.TotalSeconds
             }
-            $statusItemInfo.CommitJobId = $commitFailoverJob.ID
-            if ($commitFailoverJob.State -ne 'Succeeded')
-            {
-                LogErrorAndThrow "Commit job did not reach 'Succeeded' status in a timely manner, DisableProtection will not be executed for '$($sourceMachineName)' "
+            $reportItem.CommitJobId = $commitFailoverJob.ID
+            if ($commitFailoverJob.State -ne 'Succeeded') {
+                $processor.Logger.LogErrorAndThrow("Commit job did not reach 'Succeeded' status in a timely manner, DisableProtection will not be executed for '$($sourceMachineName)' ")
             }
         } else {
-            LogTrace "Commit operation not allowed for item '$($sourceMachineName)'"
+            $processor.Logger.LogTrace("Commit operation not allowed for item '$($sourceMachineName)'")
         }
-        if ($protectedItem.AllowedOperations.Contains('DisableProtection'))
-        {
+        if ($protectedItem.AllowedOperations.Contains('DisableProtection')) {
             #Start the failover operation
+            $processor.Logger.LogTrace("Starting DisableProtection operation for item '$($sourceMachineName)'")
             $disableReplicationJob = Remove-AzureRmRecoveryServicesAsrReplicationProtectedItem `
                 -InputObject $protectedItem
 
-            $statusItemInfo.DisableReplicationJobId = $disableReplicationJob.ID
+            $reportItem.DisableReplicationJobId = $disableReplicationJob.ID
         } else {
-            LogTrace "DisableProtection operation not allowed for item '$($sourceMachineName)'"
+            $processor.Logger.LogTrace("DisableProtection operation not allowed for item '$($sourceMachineName)'")
         }
-
-
     }
-
-    $protectedItemStatusArray.Add($statusItemInfo)
 }
 
-
-foreach ($csvItem in $csvObj)
-{
+Function ProcessItem($processor, $csvItem, $reportItem) {
     try {
-        GetProtectedItemStatus -csvItem $csvItem
-    } catch {
-        LogError "Exception executing item"
+        ProcessItemImpl $processor $csvItem $reportItem
+    }
+    catch {
         $exceptionMessage = $_ | Out-String
-
-        $statusItemInfo = [CompleteReplicationInformation]::new()
-        $statusItemInfo.Machine = $csvItem.SOURCE_MACHINE_NAME
-        $statusItemInfo.Exception = "ERROR RECOVERING INFO" 
-        $protectedItemStatusArray.Add($statusItemInfo)
-
-        LogError $exceptionMessage
+        $processor.Logger.LogError($exceptionMessage)
+        throw
     }
 }
 
-$protectedItemStatusArray.ToArray() | Export-Csv -LiteralPath $CsvOutput -Delimiter ',' -NoTypeInformation
-
-LogTrace("[FINISH]-Finish Complete")
+$logger = New-AsrLoggerInstance -CommandPath $PSCommandPath
+$asrCommon = New-AsrCommonInstance -Logger $logger
+$processor = New-CsvProcessorInstance -Logger $logger -ProcessItemFunction $function:ProcessItem
+$processor.ProcessFile($CsvFilePath)

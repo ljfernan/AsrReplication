@@ -1,73 +1,25 @@
-
-#Connect-AzureRmAccount
 Param(
     [parameter(Mandatory=$true)]
     $CsvFilePath
 )
 
-Function LogError([string] $Message)
-{
-    $logDate = (Get-Date).ToString("MM/dd/yyyy HH:mm:ss")
-    $logMessage = [string]::Concat($logDate, "[ERROR]-", $Message)
-    Write-Output $logMessage
-    Write-Host $logMessage
-}
-
-Function LogErrorAndThrow([string] $Message)
-{
-    $logDate = (Get-Date).ToString("MM/dd/yyyy HH:mm:ss")
-    $logMessage = [string]::Concat($logDate, "[ERROR]-", $Message)
-    Write-Output $logMessage
-    Write-Error $logMessage
-}
-
-Function LogTrace([string] $Message)
-{
-    $logDate = (Get-Date).ToString("MM/dd/yyyy HH:mm:ss")
-    $logMessage = [string]::Concat($logDate, "[LOG]-", $Message)
-    Write-Output $logMessage
-    Write-Host $logMessage
-}
-
-LogTrace "[START]-Starting Asr Replication"
-LogTrace "File: $CsvFilePath"
-
-$resolvedCsvPath = Resolve-Path -LiteralPath $CsvFilePath
-$csvObj = Import-Csv $resolvedCsvPath -Delimiter ','
-
-$CsvOutput = [string]::Concat($resolvedCsvPath.Path, ".migration.", (Get-Date).ToString("ddMMyyyy_HHmmss"), ".output.csv")
-
 $ErrorActionPreference = "Stop"
 
-class ReplicationInformation
-{
-    [string]$Machine
-    [string]$ProtectableStatus
-    [string]$ProtectionState
-    [string]$ProtectionStateDescription
-    [string]$Exception
-    [string]$ReplicationJobId
+$scriptsPath = $PSScriptRoot
+if ($PSScriptRoot -eq "") {
+    $scriptsPath = "."
 }
 
-$protectedItemStatusArray = New-Object System.Collections.Generic.List[System.Object]
+. "$scriptsPath\asr_logger.ps1"
+. "$scriptsPath\asr_common.ps1"
+. "$scriptsPath\asr_csv_processor.ps1"
 
-Function StartReplicationJobItem($csvItem)
-{
-    $subscriptionId = $csvItem.VAULT_SUBSCRIPTION_ID
-
-    $currentContext = Get-AzureRmContext
-    $currentSubscription = $currentContext.Subscription
-    if ($currentSubscription.Id -ne $subscriptionId)
-    {
-        Set-AzureRmContext -Subscription $subscriptionId
-        $currentContext = Get-AzureRmContext
-        $currentSubscription = $currentContext.Subscription
-        if ($currentSubscription.Id -ne $subscriptionId)
-        {
-            LogErrorAndThrow "SubscriptionId '$($subscriptionId)' is not selected as current default subscription"
-        }
-    }
-
+Function ProcessItemImpl($processor, $csvItem, $reportItem) {
+    $reportItem | Add-Member NoteProperty "ProtectableStatus" $null
+    $reportItem | Add-Member NoteProperty "ProtectionState" $null
+    $reportItem | Add-Member NoteProperty "ProtectionStateDescription" $null
+    $reportItem | Add-Member NoteProperty "ReplicationJobId" $null
+    
     $vaultName = $csvItem.VAULT_NAME
     $sourceAccountName = $csvItem.ACCOUNT_NAME
     $sourceProcessServer = $csvItem.PROCESS_SERVER
@@ -78,81 +30,45 @@ Function StartReplicationJobItem($csvItem)
     $targetPostFailoverSubnet = $csvItem.TARGET_SUBNET
     $sourceMachineName = $csvItem.SOURCE_MACHINE_NAME
     $replicationPolicy = $csvItem.REPLICATION_POLICY
-    $targetAvailabilitySet = $csvItem.AVAILABILITY_SET
-    $targetPrivateIP = $csvItem.PRIVATE_IP
-    $targetMachineSize = $csvItem.MACHINE_SIZE
     $targetMachineName = $csvItem.TARGET_MACHINE_NAME
     $targetStorageAccountRG = $csvItem.TARGET_STORAGE_ACCOUNT_RG
     $targetVNETRG = $csvItem.TARGET_VNET_RG
 
-    #Print replication settings
-    LogTrace "[REPLICATIONJOB SETTINGS]-$($sourceMachineName)"
-    LogTrace "SourceMachineName=$($sourceMachineName)"
-    LogTrace "TargetMachineName=$($targetMachineName)"
-    LogTrace "SourceProcessServer=$($sourceProcessServer)"
-    LogTrace "SourceConfigurationServer=$($sourceConfigurationServer)"
-    LogTrace "VaultName=$($vaultName)"
-    LogTrace "AccountName=$($sourceAccountName)"
-    LogTrace "TargetPostFailoverResourceGroup=$($targetPostFailoverResourceGroup)"
-    LogTrace "TargetPostFailoverStorageAccountName=$($targetPostFailoverStorageAccountName)"
-    LogTrace "TargetPostFailoverVNET=$($targetPostFailoverVNET)"
-    LogTrace "TargetPostFailoverSubnet=$($targetPostFailoverSubnet)"
-    LogTrace "TargetPostFailoverSubnet=$($targetPostFailoverSubnet)"
-    LogTrace "ReplicationPolicy=$($replicationPolicy)"
-    LogTrace "TargetAvailabilitySet=$($targetAvailabilitySet)"
-    LogTrace "TargetPrivateIP=$($targetPrivateIP)"
-    LogTrace "TargetMachineSize=$($targetMachineSize)"
-    LogTrace "targetStorageAccountRG=$($targetStorageAccountRG)"
-    LogTrace "targetVNETRG=$($targetVNETRG)"
-    
-    $statusItemInfo = [ReplicationInformation]::new()
-    $statusItemInfo.Machine = $sourceMachineName
+    $vaultServer = $asrCommon.GetAndEnsureVaultContext($vaultName)
+    $fabricServer = $asrCommon.GetFabricServer($sourceConfigurationServer)
+    $protectionContainer = $asrCommon.GetProtectionContainer($fabricServer)
+    $protectableVM = $asrCommon.GetProtectableItem($protectionContainer, $sourceMachineName)
 
-    $targetVault = Get-AzureRmRecoveryServicesVault -Name $vaultName
-    if ($targetVault -eq $null)
-    {
-        LogErrorAndThrow "Unable to find Vault with name '$($vaultName)'"
-    }
+    $processor.Logger.LogTrace("ProtectableStatus: '$($protectableVM.ProtectionStatus)'")
+    $reportItem.ProtectableStatus = $protectableVM.ProtectionStatus
 
-    Set-AzureRmRecoveryServicesAsrVaultContext -Vault $targetVault
+    if ($protectableVM.ReplicationProtectedItemId -eq $null) {
+        $processor.Logger.LogTrace("Starting protection for item '$($sourceMachineName)'")
+        #Assumption storage are already created
+        $targetPostFailoverStorageAccount = Get-AzureRmStorageAccount `
+            -Name $targetPostFailoverStorageAccountName `
+            -ResourceGroupName $targetStorageAccountRG
 
-    $fabricServer = Get-AzureRmRecoveryServicesAsrFabric `
-        -FriendlyName $sourceConfigurationServer
-    $protectionContainer = Get-AzureRmRecoveryServicesAsrProtectionContainer -Fabric $fabricServer
-    #$replicationPolicyObj = Get-AzureRmRecoveryServicesAsrPolicy -Name $replicationPolicy
+        $targetResourceGroupObj = Get-AzureRmResourceGroup -Name $targetPostFailoverResourceGroup
+        $targetVnetObj = Get-AzureRmVirtualNetwork `
+            -Name $targetPostFailoverVNET `
+            -ResourceGroupName $targetVNETRG 
+        $targetPolicyMap  =  Get-AzureRmRecoveryServicesAsrProtectionContainerMapping `
+            -ProtectionContainer $protectionContainer | Where-Object { $_.PolicyFriendlyName -eq $replicationPolicy }
+        if ($targetPolicyMap -eq $null) {
+            $processor.Logger.LogErrorAndThrow("Policy map '$($replicationPolicy)' was not found")
+        }
 
-    #Assumption storage are already created
-    $targetPostFailoverStorageAccount = Get-AzureRmStorageAccount `
-        -Name $targetPostFailoverStorageAccountName `
-        -ResourceGroupName $targetStorageAccountRG
-
-    $targetResourceGroupObj = Get-AzureRmResourceGroup -Name $targetPostFailoverResourceGroup
-    $targetVnetObj = Get-AzureRmVirtualNetwork `
-        -Name $targetPostFailoverVNET `
-        -ResourceGroupName $targetVNETRG 
-    $targetPolicyMap  =  Get-AzureRmRecoveryServicesAsrProtectionContainerMapping `
-        -ProtectionContainer $protectionContainer | Where-Object { $_.PolicyFriendlyName -eq $replicationPolicy }
-    if ($targetPolicyMap -eq $null)
-    {
-        LogErrorAndThrow "Policy map '$($replicationPolicy)' was not found"
-    }
-    $protectableVM = Get-AzureRmRecoveryServicesAsrProtectableItem -ProtectionContainer $protectionContainer -FriendlyName $sourceMachineName
-    $statusItemInfo.ProtectableStatus = $protectableVM.ProtectionStatus
-
-    if ($protectableVM.ReplicationProtectedItemId -eq $null)
-    {
         $sourceProcessServerObj = $fabricServer.FabricSpecificDetails.ProcessServers | Where-Object { $_.FriendlyName -eq $sourceProcessServer }
-        if ($sourceProcessServerObj -eq $null)
-        {
-            LogErrorAndThrow "Process server with name '$($sourceProcessServer)' was not found"
+        if ($sourceProcessServerObj -eq $null) {
+            $processor.Logger.LogErrorAndThrow("Process server with name '$($sourceProcessServer)' was not found")
         }
         $sourceAccountObj = $fabricServer.FabricSpecificDetails.RunAsAccounts | Where-Object { $_.AccountName -eq $sourceAccountName }
-        if ($sourceAccountObj -eq $null)
-        {
-            LogErrorAndThrow "Account name '$($sourceAccountName)' was not found"
+        if ($sourceAccountObj -eq $null) {
+            $processor.Logger.LogErrorAndThrow("Account name '$($sourceAccountName)' was not found")
         }
 
-        LogTrace "Starting replication Job for source '$($sourceMachineName)'"
+        $processor.Logger.LogTrace( "Starting replication Job for source '$($sourceMachineName)'")
         $replicationJob = New-AzureRmRecoveryServicesAsrReplicationProtectedItem `
             -VMwareToAzure `
             -ProtectableItem $protectableVM `
@@ -173,16 +89,14 @@ Function StartReplicationJobItem($csvItem)
         }
         $statusItemInfo.ReplicationJobId = $replicationJob.Name
 
-        if ($replicationJobObj.State -eq 'Failed')
-        {
+        if ($replicationJobObj.State -eq 'Failed') {
             LogError "Error starting replication job"
-            foreach ($replicationJobError in $replicationJobObj.Errors)
-            {
+            foreach ($replicationJobError in $replicationJobObj.Errors) {
                 LogError $replicationJobError.ServiceErrorDetails.Message
                 LogError $replicationJobError.ServiceErrorDetails.PossibleCauses
             }
         } else {
-            LogTrace "ReplicationJob initiated"        
+            $processor.Logger.LogTrace("ReplicationJob initiated")      
         }
     } else {
         $protectedItem = Get-AzureRmRecoveryServicesAsrReplicationProtectedItem `
@@ -190,27 +104,24 @@ Function StartReplicationJobItem($csvItem)
             -FriendlyName $sourceMachineName
         $statusItemInfo.ProtectionState = $protectedItem.ProtectionState
         $statusItemInfo.ProtectionStateDescription = $protectedItem.ProtectionStateDescription
+
+        $processor.Logger.LogTrace("ProtectionState: '$($protectedItem.ProtectionState)'")
+        $processor.Logger.LogTrace("ProtectionDescription: '$($protectedItem.ProtectionStateDescription)'")
     }
-    $protectedItemStatusArray.Add($statusItemInfo)
 }
 
-foreach ($csvItem in $csvObj)
-{
+Function ProcessItem($processor, $csvItem, $reportItem) {
     try {
-        StartReplicationJobItem -csvItem $csvItem
-    } catch {
-        LogError "Exception creating replication job"
+        ProcessItemImpl $processor $csvItem $reportItem
+    }
+    catch {
         $exceptionMessage = $_ | Out-String
-
-        $statusItemInfo = [ReplicationInformation]::new()
-        $statusItemInfo.Machine = $csvItem.SOURCE_MACHINE_NAME
-        $statusItemInfo.Exception = "ERROR PROCESSING ITEM" 
-        $protectedItemStatusArray.Add($statusItemInfo)
-
-        LogError $exceptionMessage
+        $processor.Logger.LogError($exceptionMessage)
+        throw
     }
 }
 
-$protectedItemStatusArray.ToArray() | Export-Csv -LiteralPath $CsvOutput -Delimiter ',' -NoTypeInformation
-
-LogTrace "[FINISH]-Finishing Asr Replication"
+$logger = New-AsrLoggerInstance -CommandPath $PSCommandPath
+$asrCommon = New-AsrCommonInstance -Logger $logger
+$processor = New-CsvProcessorInstance -Logger $logger -ProcessItemFunction $function:ProcessItem
+$processor.ProcessFile($CsvFilePath)

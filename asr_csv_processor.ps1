@@ -77,10 +77,12 @@ class CsvProcessor
 
     [void] EnsureSubscription($subscriptionId)
     {
+        $this.Logger.LogTrace("Checking if current subscription equals to '$($subscriptionId)'")
         $currentContext = Get-AzureRmContext
         $currentSubscription = $currentContext.Subscription
         if ($currentSubscription.Id -ne $subscriptionId)
         {
+            $this.Logger.LogTrace("Setting context subscription '$($subscriptionId)'")
             Set-AzureRmContext -Subscription $subscriptionId
             $currentContext = Get-AzureRmContext
             $currentSubscription = $currentContext.Subscription
@@ -88,16 +90,20 @@ class CsvProcessor
             {
                 $this.Logger.LogErrorAndThrow("SubscriptionId '$($subscriptionId)' is not selected as current default subscription")
             }
+        } else {
+            $this.Logger.LogTrace("Subscription '$($subscriptionId)' is already selected")
         }
     }
 
     [void] PrintSettings($csvItem)
     {
+        $this.Logger.LogTrace("---BEGIN ITEM DATA---")
         $propertyNames = $csvItem | Get-Member -MemberType Properties | Select-Object -ExpandProperty Name #| Select-Object -Unique
         foreach ($propertyName in $propertyNames) {
             $propertyValue = $csvItem.$($propertyName)
             $this.Logger.LogTrace("$($propertyName)=$($propertyValue)")
         }
+        $this.Logger.LogTrace("---END ITEM DATA---")
     }
 }
 

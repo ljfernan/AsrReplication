@@ -7,7 +7,7 @@ class AsrCommon
         $this.Logger = $logger
     }
 
-    [void] EnsureVaultContext($vaultName)
+    [psobject] GetAndEnsureVaultContext($vaultName)
     {
         $this.Logger.LogTrace("Ensuring services vault context '$($vaultName)'")
         $targetVault = Get-AzureRmRecoveryServicesVault -Name $vaultName
@@ -16,12 +16,19 @@ class AsrCommon
             $this.Logger.LogError("Vault with name '$($vaultName)' unable to find")
         }
         Set-AzureRmRecoveryServicesAsrVaultContext -Vault $targetVault
+        return $targetVault
     }
 
-    [psobject] GetProtectionContainer($sourceConfigurationServer)
+    [psobject] GetFabricServer($sourceConfigurationServer)
     {
-        $this.Logger.LogTrace("Getting protection container reference for configuration server '$($sourceConfigurationServer)'")
+        $this.Logger.LogTrace("Getting fabric server for configuration server '$($sourceConfigurationServer)'")
         $fabricServer = Get-AzureRmRecoveryServicesAsrFabric -FriendlyName $sourceConfigurationServer
+        return $fabricServer
+    }
+
+    [psobject] GetProtectionContainer($fabricServer)
+    {
+        $this.Logger.LogTrace("Getting protection container reference for fabric server '$($fabricServer.Name)-$($fabricServer.FriendlyName)'")
         $protectionContainer = Get-AzureRmRecoveryServicesAsrProtectionContainer -Fabric $fabricServer
         return $protectionContainer
     }
@@ -42,6 +49,29 @@ class AsrCommon
             -ProtectionContainer $protectionContainer `
             -FriendlyName $sourceMachineName
         return $protectedItem
+    }
+
+    [psobject] GetProtectedItemFromVault($vaultName, $sourceMachineName, $sourceConfigurationServer) {
+
+        $vaultServer = $this.GetAndEnsureVaultContext($vaultName)
+        $fabricServer = $this.GetFabricServer($sourceConfigurationServer)
+        $protectionContainer = $this.GetProtectionContainer($fabricServer)
+        $protectableVM = $this.GetProtectableItem($protectionContainer, $sourceMachineName)
+    
+        $this.Logger.LogTrace("ProtectableStatus: '$($protectableVM.ProtectionStatus)'")
+    
+        if ($protectableVM.ReplicationProtectedItemId -ne $null) {
+            $protectedItem = $this.GetProtectedItem($protectionContainer, $sourceMachineName)
+    
+            $this.Logger.LogTrace("ProtectionState: '$($protectedItem.ProtectionState)'")
+            $this.Logger.LogTrace("ProtectionDescription: '$($protectedItem.ProtectionStateDescription)'")
+    
+            return $protectedItem
+        } else {
+            $this.Logger.LogTrace("'$($sourceMachineName)' protectable item is not in a protected state ready for replication")
+    
+            return $null
+        }        
     }
 }
 

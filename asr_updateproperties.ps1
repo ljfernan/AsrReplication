@@ -1,175 +1,97 @@
-
-
-#Connect-AzureRmAccount
 Param(
     [parameter(Mandatory=$true)]
     $CsvFilePath
 )
 
-Function LogError([string] $Message)
-{
-    $logDate = (Get-Date).ToString("MM/dd/yyyy HH:mm:ss")
-    $logMessage = [string]::Concat($logDate, "[ERROR]-", $Message)
-    Write-Output $logMessage
-    Write-Host $logMessage
-}
-
-Function LogErrorAndThrow([string] $Message)
-{
-    $logDate = (Get-Date).ToString("MM/dd/yyyy HH:mm:ss")
-    $logMessage = [string]::Concat($logDate, "[ERROR]-", $Message)
-    Write-Output $logMessage
-    Write-Error $logMessage
-}
-
-Function LogTrace([string] $Message)
-{
-    $logDate = (Get-Date).ToString("MM/dd/yyyy HH:mm:ss")
-    $logMessage = [string]::Concat($logDate, "[LOG]-", $Message)
-    Write-Output $logMessage
-    Write-Host $logMessage
-}
-
-LogTrace("[START]-Starting Update properties")
-LogTrace("File: $($CsvFilePath)")
-
-$resolvedCsvPath = Resolve-Path -LiteralPath $CsvFilePath
-$csvObj = Import-Csv $resolvedCsvPath -Delimiter ','
-
-$CsvOutput = [string]::Concat($resolvedCsvPath.Path, ".updateproperties.", (Get-Date).ToString("ddMMyyyy_HHmmss"), ".output.csv")
-
 $ErrorActionPreference = "Stop"
 
-class UpdatePropertiesInformation
-{
-    [string]$Machine
-    [string]$ProtectionState
-    [string]$ProtectionStateDescription
-    [string]$Exception
-    [string]$UpdatePropertiesJobId
+$scriptsPath = $PSScriptRoot
+if ($PSScriptRoot -eq "") {
+    $scriptsPath = "."
 }
 
-$protectedItemStatusArray = New-Object System.Collections.Generic.List[System.Object]
+. "$scriptsPath\asr_logger.ps1"
+. "$scriptsPath\asr_common.ps1"
+. "$scriptsPath\asr_csv_processor.ps1"
 
-Function StartUpdatePropertiesJobItem($csvItem)
-{
-    $subscriptionId = $csvItem.VAULT_SUBSCRIPTION_ID
-
-    $currentContext = Get-AzureRmContext
-    $currentSubscription = $currentContext.Subscription
-    if ($currentSubscription.Id -ne $subscriptionId)
-    {
-        Set-AzureRmContext -Subscription $subscriptionId
-        $currentContext = Get-AzureRmContext
-        $currentSubscription = $currentContext.Subscription
-        if ($currentSubscription.Id -ne $subscriptionId)
-        {
-            LogErrorAndThrow("SubscriptionId '$($subscriptionId)' is not selected as current default subscription")
-        }
-    }
-
+Function ProcessItemImpl($processor, $csvItem, $reportItem) {
+    $reportItem | Add-Member NoteProperty "UpdatePropertiesJobId" $null
+    $reportItem | Add-Member NoteProperty "ProtectionState" $null
+    $reportItem | Add-Member NoteProperty "ProtectionStateDescription" $null
+    
     $vaultName = $csvItem.VAULT_NAME
     $sourceMachineName = $csvItem.SOURCE_MACHINE_NAME
-    $targetAvailabilitySet = $csvItem.AVAILABILITY_SET
-    $targetPrivateIP = $csvItem.PRIVATE_IP
-    $targetMachineSize = $csvItem.MACHINE_SIZE
     $sourceConfigurationServer = $csvItem.CONFIGURATION_SERVER
-    $targetPostFailoverResourceGroup = $csvItem.TARGET_RESOURCE_GROUP
-    $targetSubnet = $csvItem.TARGET_SUBNET
 
-    #Print replication settings
-    LogTrace("[REPLICATIONJOB]-$($sourceMachineName)")
-    LogTrace("SubscriptionId=$($subscriptionId)")
-    LogTrace("SourceMachineName=$($sourceMachineName)")
-    LogTrace("SourceConfigurationServer=$($sourceConfigurationServer)")
-    LogTrace("VaultName=$($vaultName)")
-    LogTrace("TargetAvailabilitySet=$($targetAvailabilitySet)")
-    LogTrace("TargetResourceGroup=$($targetPostFailoverResourceGroup)")
-    LogTrace("TargetPrivateIP=$($targetPrivateIP)")
-    LogTrace("TargetMachineSize=$($targetMachineSize)")
-    LogTrace("TargetSubnet=$($targetSubnet)")
+    $vaultServer = $asrCommon.GetAndEnsureVaultContext($vaultName)
+    $fabricServer = $asrCommon.GetFabricServer($sourceConfigurationServer)
+    $protectionContainer = $asrCommon.GetProtectionContainer($fabricServer)
+    $protectableVM = $asrCommon.GetProtectableItem($protectionContainer, $sourceMachineName)
 
-    $statusItemInfo = [UpdatePropertiesInformation]::new()
-    $statusItemInfo.Machine = $sourceMachineName
+    $processor.Logger.LogTrace("ProtectableStatus: '$($protectableVM.ProtectionStatus)'")
+    $reportItem.ProtectableStatus = $protectableVM.ProtectionStatus
 
-    $targetVault = Get-AzureRmRecoveryServicesVault -Name $vaultName
-    if ($targetVault -eq $null)
-    {
-        LogError("Vault with name '$($vaultName)' unable to find")
-    }
+    if ($protectableVM.ReplicationProtectedItemId -ne $null) {
+        $protectedItem = $asrCommon.GetProtectedItem($protectionContainer, $sourceMachineName)
 
-    Set-AzureRmRecoveryServicesAsrVaultContext -Vault $targetVault
+        $reportItem.ProtectionState = $protectedItem.ProtectionState
+        $reportItem.ProtectionStateDescription = $protectedItem.ProtectionStateDescription
+        $processor.Logger.LogTrace("ProtectionState: '$($protectedItem.ProtectionState)'")
+        $processor.Logger.LogTrace("ProtectionDescription: '$($protectedItem.ProtectionStateDescription)'")
 
-    $fabricServer = Get-AzureRmRecoveryServicesAsrFabric -FriendlyName $sourceConfigurationServer
-    $protectionContainer = Get-AzureRmRecoveryServicesAsrProtectionContainer -Fabric $fabricServer
+        if ($protectedItem.ProtectionState -eq 'Protected') {
+            $processor.Logger.LogTrace("Creating job to set machine properties...")
+            $nicDetails = $protectedItem.NicDetailsList[0]
+            if (($targetAvailabilitySet -eq '') -or ($targetAvailabilitySet -eq $null)) {
+                $updatePropertiesJob = Set-AzureRmRecoveryServicesAsrReplicationProtectedItem `
+                    -InputObject $protectedItem `
+                    -PrimaryNic $nicDetails.NicId `
+                    -RecoveryNicStaticIPAddress $targetPrivateIP `
+                    -RecoveryNetworkId $nicdetails.RecoveryVMNetworkId `
+                    -RecoveryNicSubnetName $targetSubnet `
+                    -UseManagedDisk $False `
+                    -Size $targetMachineSize
+            } else {
+                $targetAvailabilitySetObj = Get-AzureRmAvailabilitySet `
+                    -ResourceGroupName $targetPostFailoverResourceGroup `
+                    -Name $targetAvailabilitySet
     
-    $protectedItem = Get-AzureRmRecoveryServicesAsrReplicationProtectedItem `
-        -ProtectionContainer $protectionContainer `
-        -FriendlyName $sourceMachineName
-    $statusItemInfo.ProtectionState = $protectedItem.ProtectionState
-    $statusItemInfo.ProtectionStateDescription = $protectedItem.ProtectionStateDescription
+                $updatePropertiesJob = Set-AzureRmRecoveryServicesAsrReplicationProtectedItem `
+                    -InputObject $protectedItem `
+                    -PrimaryNic $nicDetails.NicId `
+                    -RecoveryNicStaticIPAddress $targetPrivateIP `
+                    -RecoveryNetworkId $nicdetails.RecoveryVMNetworkId `
+                    -RecoveryNicSubnetName $targetSubnet `
+                    -UseManagedDisk $False `
+                    -RecoveryAvailabilitySet $targetAvailabilitySetObj.Id `
+                    -Size $targetMachineSize
+            }
     
-    if ($protectedItem.ProtectionState -eq 'Protected')
-    {
-        LogTrace "Creating job to set machine properties..."
-        $nicDetails = $protectedItem.NicDetailsList[0]
-        if (($targetAvailabilitySet -eq '') -or ($targetAvailabilitySet -eq $null))
-        {
-            $updatePropertiesJob = Set-AzureRmRecoveryServicesAsrReplicationProtectedItem `
-                -InputObject $protectedItem `
-                -PrimaryNic $nicDetails.NicId `
-                -RecoveryNicStaticIPAddress $targetPrivateIP `
-                -RecoveryNetworkId $nicdetails.RecoveryVMNetworkId `
-                -RecoveryNicSubnetName $targetSubnet `
-                -UseManagedDisk $False `
-                -Size $targetMachineSize
+            if ($updatePropertiesJob -eq $null)
+            {
+                $processor.Logger.LogErrorAndThrow("Error creating update properties job for '$($sourceMachineName)'")
+            }
+            $reportItem.UpdatePropertiesJobId = $updatePropertiesJob.Name
         } else {
-            $targetAvailabilitySetObj = Get-AzureRmAvailabilitySet `
-                -ResourceGroupName $targetPostFailoverResourceGroup `
-                -Name $targetAvailabilitySet
-
-            $updatePropertiesJob = Set-AzureRmRecoveryServicesAsrReplicationProtectedItem `
-                -InputObject $protectedItem `
-                -PrimaryNic $nicDetails.NicId `
-                -RecoveryNicStaticIPAddress $targetPrivateIP `
-                -RecoveryNetworkId $nicdetails.RecoveryVMNetworkId `
-                -RecoveryNicSubnetName $targetSubnet `
-                -UseManagedDisk $False `
-                -RecoveryAvailabilitySet $targetAvailabilitySetObj.Id `
-                -Size $targetMachineSize
+            $processor.Logger.LogTrace("Item '$($sourceMachineName)' it is not in a Protected status")
         }
-
-        if ($updatePropertiesJob -eq $null)
-        {
-            LogErrorAndThrow("Error creating update properties job for '$($sourceMachineName)'")
-        }
-        $statusItemInfo.UpdatePropertiesJobId = $updatePropertiesJob.Name
     } else {
-        LogTrace "Item '$($sourceMachineName)' it is not in a Protected status"
+        $processor.Logger.LogTrace("'$($sourceMachineName)' item is not in a protected state ready for replication")
     }
-    $protectedItemStatusArray.Add($statusItemInfo)
-
-    LogTrace "Update machine properties job created"
 }
 
-foreach ($csvItem in $csvObj)
-{
+Function ProcessItem($processor, $csvItem, $reportItem) {
     try {
-        StartUpdatePropertiesJobItem -csvItem $csvItem
-    } catch {
-        LogError "Exception creating update properties job"
+        ProcessItemImpl $processor $csvItem $reportItem
+    }
+    catch {
         $exceptionMessage = $_ | Out-String
-
-        $statusItemInfo = [UpdatePropertiesInformation]::new()
-        $statusItemInfo.Machine = $csvItem.SOURCE_MACHINE_NAME
-        $statusItemInfo.Exception = "ERROR PROCESSING ITEM" 
-        $protectedItemStatusArray.Add($statusItemInfo)
-
-        LogError $exceptionMessage
+        $processor.Logger.LogError($exceptionMessage)
+        throw
     }
 }
 
-$protectedItemStatusArray.ToArray() | Export-Csv -LiteralPath $CsvOutput -Delimiter ',' -NoTypeInformation
-
-LogTrace("[FINISH]-Finishing Asr update properties")
-
+$logger = New-AsrLoggerInstance -CommandPath $PSCommandPath
+$asrCommon = New-AsrCommonInstance -Logger $logger
+$processor = New-CsvProcessorInstance -Logger $logger -ProcessItemFunction $function:ProcessItem
+$processor.ProcessFile($CsvFilePath)

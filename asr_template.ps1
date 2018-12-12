@@ -14,16 +14,18 @@ if ($PSScriptRoot -eq "") {
 . "$scriptsPath\asr_common.ps1"
 . "$scriptsPath\asr_csv_processor.ps1"
 
-Function ProcessItem($processor, $csvItem, $reportItem)
-{
+Function ProcessItemImpl($processor, $csvItem, $reportItem) {
+    #Add additional fields to the $reportItem object to report execution details
+    #It will be included in the out.<script_name>.<csv_name>.<date>.csv reporting file
+    $reportItem | Add-Member NoteProperty "AdditionalInfoForReporting" $null
+    $processor.Logger.LogTrace("Sample log - $($csvItem.SOURCE_MACHINE_NAME)")
+    $reportItem.AdditionalInfoForReporting = "test_info" 
+}
+
+Function ProcessItem($processor, $csvItem, $reportItem) {
     try {
         #This method will be invoked for each row in the CSV file
-
-        #Add additional fields to the $reportItem object to report execution details
-        #It will be included in the out.<script_name>.<csv_name>.<date>.csv reporting file
-        $reportItem | Add-Member NoteProperty "AdditionalInfoForReporting" $null
-        $processor.Logger.LogTrace("Sample log - $($csvItem.SOURCE_MACHINE_NAME)")
-        $reportItem.AdditionalInfoForReporting = "test_info" 
+        ProcessItemImpl $processor $csvItem $reportItem
     }
     catch {
         $exceptionMessage = $_ | Out-String
