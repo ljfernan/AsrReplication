@@ -24,4 +24,4 @@ Input CSV must be created with a header line with these values:
 
 `VAULT_SUBSCRIPTION_ID,VAULT_NAME,SOURCE_MACHINE_NAME,TARGET_MACHINE_NAME,CONFIGURATION_SERVER,PROCESS_SERVER,TARGET_RESOURCE_GROUP,TARGET_STORAGE_ACCOUNT,TARGET_STORAGE_ACCOUNT_RG,TARGET_VNET,TARGET_VNET_RG,TARGET_SUBNET,REPLICATION_POLICY,ACCOUNT_NAME,AVAILABILITY_SET,PRIVATE_IP,MACHINE_SIZE,TESTFAILOVER_RESOURCE_GROUP,TESTFAILOVER_VNET,TARGET_NSG_NAME,TARGET_NSG_RESOURCE_GROUP`
 
-After header, each row must provide migration values according to this header fields for each machine to be migrated  
+After header, each row must provide migration values according to these header fields for each machine to be migrated  
