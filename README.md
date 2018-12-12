@@ -20,8 +20,10 @@ Additional scripts:
 - Assign one NSG to one nic after failver:
     - asr_post_failover.ps1
 
-Input CSV must be created with a header line with these values:
+Input CSV must have a header line with specific names and after that must provide migration values according to these header fields for each machine to be migrated
 
-`VAULT_SUBSCRIPTION_ID,VAULT_NAME,SOURCE_MACHINE_NAME,TARGET_MACHINE_NAME,CONFIGURATION_SERVER,PROCESS_SERVER,TARGET_RESOURCE_GROUP,TARGET_STORAGE_ACCOUNT,TARGET_STORAGE_ACCOUNT_RG,TARGET_VNET,TARGET_VNET_RG,TARGET_SUBNET,REPLICATION_POLICY,ACCOUNT_NAME,AVAILABILITY_SET,PRIVATE_IP,MACHINE_SIZE,TESTFAILOVER_RESOURCE_GROUP,TESTFAILOVER_VNET,TARGET_NSG_NAME,TARGET_NSG_RESOURCE_GROUP`
+- [Sample CSV template](input_template.csv)
 
-After header, each row must provide migration values according to these header fields for each machine to be migrated  
+It is also an additional script that can be used as a template to reuse the CSV and create additional processing
+- [Sample .ps1 template](asr_template.ps1)
+
