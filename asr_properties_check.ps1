@@ -65,7 +65,7 @@ class CheckInformation
 
 Function CheckParameter([string]$ParameterName, [string]$ExpectedValue, [string]$ActualValue)
 {
-    LogError "Parameter check '$($ParameterName)'. ExpectedValue: '$($ExpectedValue)', ActualValue: '$($ActualValue)'"
+    LogTrace "Parameter check '$($ParameterName)'. ExpectedValue: '$($ExpectedValue)', ActualValue: '$($ActualValue)'"
     if ($ExpectedValue -ne $ActualValue)
     {
         throw "Expected value '$($ExpectedValue)' does not match actual value '$($ActualValue)' for parameter $($ParameterName)"
@@ -153,15 +153,20 @@ Function GetProtectedItemStatus($csvItem)
             -ProtectionContainer $protectionContainer `
             -FriendlyName $sourceMachineName
 
-        
         $apiVersion = "2018-01-10"
-        $resourceRawData = Get-AzureRmResource -ResourceId $protectedItem.ID -ApiVersion $apiVersion
-        
+        #Using 'Get-AzureRmResource -ResourceId $protectedItem.ID -ApiVersion $apiVersion' returns $null after 5.x AzureRM.Resources module version        
+        $resourceName = [string]::Concat($targetVault.Name, "/", $fabricServer.Name, "/", $protectionContainer.Name, "/", $protectedItem.Name)
+        $resourceRawData = Get-AzureRmResource `
+             -ResourceGroupName $targetVault.ResourceGroupName `
+             -ResourceType  $protectedItem.Type `
+             -ResourceName $resourceName `
+             -ApiVersion $apiVersion
+
         #RESOURCE_GROUP
         try {
             #$resourceRawData.Properties.providerSpecificDetails.recoveryAzureResourceGroupId
-            $sourceResourceGroup = Get-AzureRmResourceGroup -Name $targetPostFailoverResourceGroup
-            CheckParameter 'TARGET_RESOURCE_GROUP' $sourceResourceGroup.ResourceId $resourceRawData.Properties.providerSpecificDetails.recoveryAzureResourceGroupId
+            $targetResourceGroup = Get-AzureRmResourceGroup -Name $targetPostFailoverResourceGroup
+            CheckParameter 'TARGET_RESOURCE_GROUP' $targetResourceGroup.ResourceId $resourceRawData.Properties.providerSpecificDetails.recoveryAzureResourceGroupId
             $statusItemInfo.TargetPostFailoverResourceGroupCheck = "DONE"
         }
         catch {
