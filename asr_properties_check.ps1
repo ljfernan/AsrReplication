@@ -85,7 +85,7 @@ Function ProcessItemImpl($processor, $csvItem, $reportItem) {
         #$resourceRawData.Properties.providerSpecificDetails.RecoveryAzureStorageAccount
         try {
             $RecoveryAzureStorageAccountRef = Get-AzureRmResource -ResourceId $resourceRawData.Properties.providerSpecificDetails.RecoveryAzureStorageAccount
-            CheckParameter $processor.Logger 'TARGET_STORAGE_ACCOUNT' $targetPostFailoverStorageAccountName $RecoveryAzureStorageAccountRef.ResourceName
+            CheckParameter $processor.Logger 'TARGET_STORAGE_ACCOUNT' $targetPostFailoverStorageAccountName $RecoveryAzureStorageAccountRef.Name
             $reportItem.TargetPostFailoverStorageAccountNameCheck = "DONE"
         } catch {
             $reportItem.TargetPostFailoverStorageAccountNameCheck = "ERROR"

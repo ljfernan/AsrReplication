@@ -30,7 +30,7 @@ Function ProcessItemImpl($processor, $csvItem, $reportItem) {
         -Name $targetMachineName `
         -ResourceGroupName $targetPostFailoverResourceGroup
 
-    $processor.Logger. "Getting Network Security Group reference for '$($targetNsgName)' in resource group '$($targetNsgResourceGroup)'")
+    $processor.Logger.LogTrace("Getting Network Security Group reference for '$($targetNsgName)' in resource group '$($targetNsgResourceGroup)'")
     $targetNsgObj = Get-AzureRmNetworkSecurityGroup `
         -Name $targetNsgName `
         -ResourceGroupName $targetNsgResourceGroup

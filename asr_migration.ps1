@@ -87,7 +87,7 @@ Function ProcessItemImpl($processor, $csvItem, $reportItem) {
             Write-Host "." -NoNewline 
             $replicationJobObj = Get-AzureRmRecoveryServicesAsrJob -Name $replicationJob.Name
         }
-        $statusItemInfo.ReplicationJobId = $replicationJob.Name
+        $reportItem.ReplicationJobId = $replicationJob.Name
 
         if ($replicationJobObj.State -eq 'Failed') {
             LogError "Error starting replication job"
@@ -102,8 +102,8 @@ Function ProcessItemImpl($processor, $csvItem, $reportItem) {
         $protectedItem = Get-AzureRmRecoveryServicesAsrReplicationProtectedItem `
             -ProtectionContainer $protectionContainer `
             -FriendlyName $sourceMachineName
-        $statusItemInfo.ProtectionState = $protectedItem.ProtectionState
-        $statusItemInfo.ProtectionStateDescription = $protectedItem.ProtectionStateDescription
+        $reportItem.ProtectionState = $protectedItem.ProtectionState
+        $reportItem.ProtectionStateDescription = $protectedItem.ProtectionStateDescription
 
         $processor.Logger.LogTrace("ProtectionState: '$($protectedItem.ProtectionState)'")
         $processor.Logger.LogTrace("ProtectionDescription: '$($protectedItem.ProtectionStateDescription)'")

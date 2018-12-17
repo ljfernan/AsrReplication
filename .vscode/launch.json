@@ -33,7 +33,7 @@
             "request": "launch",
             "name": "PS status",
             "script": "${workspaceRoot}/asr_migration_status.ps1",
-            "args": ["-CsvFilePath ./input_template.csv"],
+            "args": ["-CsvFilePath ./asr_migration.new.1.csv"],
             "cwd": "${workspaceRoot}"
         },
         {
@@ -57,6 +57,14 @@
             "request": "launch",
             "name": "PS realfailover",
             "script": "${workspaceRoot}/asr_failover.ps1",
+            "args": ["-CsvFilePath ./asr_migration.new.1.csv"],
+            "cwd": "${workspaceRoot}"
+        },
+        {
+            "type": "PowerShell",
+            "request": "launch",
+            "name": "PS postfailover",
+            "script": "${workspaceRoot}/asr_post_failover.ps1",
             "args": ["-CsvFilePath ./asr_migration.new.1.csv"],
             "cwd": "${workspaceRoot}"
         },

@@ -16,12 +16,18 @@ if ($PSScriptRoot -eq "") {
 
 Function ProcessItemImpl($processor, $csvItem, $reportItem) {
     $reportItem | Add-Member NoteProperty "UpdatePropertiesJobId" $null
+    $reportItem | Add-Member NoteProperty "ProtectableStatus" $null
     $reportItem | Add-Member NoteProperty "ProtectionState" $null
     $reportItem | Add-Member NoteProperty "ProtectionStateDescription" $null
     
     $vaultName = $csvItem.VAULT_NAME
     $sourceMachineName = $csvItem.SOURCE_MACHINE_NAME
     $sourceConfigurationServer = $csvItem.CONFIGURATION_SERVER
+    $targetAvailabilitySet = $csvItem.AVAILABILITY_SET
+    $targetPrivateIP = $csvItem.PRIVATE_IP
+    $targetSubnet = $csvItem.TARGET_SUBNET
+    $targetMachineSize = $csvItem.MACHINE_SIZE
+    $targetPostFailoverResourceGroup = $csvItem.TARGET_RESOURCE_GROUP
 
     $vaultServer = $asrCommon.GetAndEnsureVaultContext($vaultName)
     $fabricServer = $asrCommon.GetFabricServer($sourceConfigurationServer)

@@ -20,7 +20,7 @@ Function ProcessItemImpl($processor, $csvItem, $reportItem) {
     $reportItem | Add-Member NoteProperty "TestFailoverStateDescription" $null
 
     $vaultName = $csvItem.VAULT_NAME
-    $sourceAccountName = $csvItem.ACCOUNT_NAME
+    $sourceMachineName = $csvItem.SOURCE_MACHINE_NAME
     $sourceConfigurationServer = $csvItem.CONFIGURATION_SERVER
 
     $protectedItem = $asrCommon.GetProtectedItemFromVault($vaultName, $sourceMachineName, $sourceConfigurationServer)
