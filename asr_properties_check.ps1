@@ -1,163 +1,71 @@
-
-
-#Connect-AzureRmAccount
 Param(
     [parameter(Mandatory=$true)]
     $CsvFilePath
 )
 
-Function LogError([string] $Message)
-{
-    $logDate = (Get-Date).ToString("MM/dd/yyyy HH:mm:ss")
-    $logMessage = [string]::Concat($logDate, "[ERROR]-", $Message)
-    Write-Output $logMessage
-    Write-Host $logMessage
-}
-
-Function LogErrorAndThrow([string] $Message)
-{
-    $logDate = (Get-Date).ToString("MM/dd/yyyy HH:mm:ss")
-    $logMessage = [string]::Concat($logDate, "[ERROR]-", $Message)
-    Write-Output $logMessage
-    Write-Error $logMessage
-}
-
-Function LogTrace([string] $Message)
-{
-    $logDate = (Get-Date).ToString("MM/dd/yyyy HH:mm:ss")
-    $logMessage = [string]::Concat($logDate, "[LOG]-", $Message)
-    Write-Output $logMessage
-    Write-Host $logMessage
-}
-
-LogTrace("[START]-Checking properties")
-LogTrace("File: $($CsvFilePath)")
-
-$resolvedCsvPath = Resolve-Path -LiteralPath $CsvFilePath
-$csvObj = Import-Csv $resolvedCsvPath -Delimiter ','
-
-$CsvOutput = [string]::Concat($resolvedCsvPath.Path, ".propertiescheck.", (Get-Date).ToString("ddMMyyyy_HHmmss"), ".output.csv")
-
 $ErrorActionPreference = "Stop"
 
-$protectedItemStatusArray = New-Object System.Collections.Generic.List[System.Object]
-# $statusItemInfo = New-Object PSObject
-# $statusItemInfo | Add-Member -type NoteProperty -Name 'Machine' -Value $sourceMachineName
-# $protectedItemStatusArray +=$statusItemInfo
-
-class CheckInformation
-{
-    [string]$Machine
-    [string]$Exception
-    [string]$VaultNameCheck
-    [string]$SourceConfigurationServerCheck
-    [string]$SourceMachineNameCheck
-    [string]$TargetPostFailoverResourceGroupCheck
-    [string]$TargetPostFailoverStorageAccountNameCheck
-    [string]$TargetPostFailoverVNETCheck
-    [string]$TargetPostFailoverSubnetCheck
-    [string]$ReplicationPolicyCheck
-    [string]$TargetAvailabilitySetCheck
-    [string]$TargetPrivateIPCheck
-    [string]$TargetMachineSizeCheck
-    [string]$TargetMachineNameCheck
+$scriptsPath = $PSScriptRoot
+if ($PSScriptRoot -eq "") {
+    $scriptsPath = "."
 }
 
-Function CheckParameter([string]$ParameterName, [string]$ExpectedValue, [string]$ActualValue)
-{
-    LogTrace "Parameter check '$($ParameterName)'. ExpectedValue: '$($ExpectedValue)', ActualValue: '$($ActualValue)'"
-    if ($ExpectedValue -ne $ActualValue)
-    {
+. "$scriptsPath\asr_logger.ps1"
+. "$scriptsPath\asr_common.ps1"
+. "$scriptsPath\asr_csv_processor.ps1"
+
+Function CheckParameter($logger, [string]$ParameterName, [string]$ExpectedValue, [string]$ActualValue) {
+    $logger.LogTrace("Parameter check '$($ParameterName)'. ExpectedValue: '$($ExpectedValue)', ActualValue: '$($ActualValue)'")
+    if ($ExpectedValue -ne $ActualValue) {
         throw "Expected value '$($ExpectedValue)' does not match actual value '$($ActualValue)' for parameter $($ParameterName)"
     } else {
-        LogTrace "Parameter check '$($ParameterName)' DONE"
+        $logger.LogTrace("Parameter check '$($ParameterName)' DONE")
     }
 }
 
-Function GetProtectedItemStatus($csvItem)
-{
-    $subscriptionId = $csvItem.VAULT_SUBSCRIPTION_ID
-
-    $currentContext = Get-AzureRmContext
-    $currentSubscription = $currentContext.Subscription
-    if ($currentSubscription.Id -ne $subscriptionId)
-    {
-        Set-AzureRmContext -Subscription $subscriptionId
-        $currentContext = Get-AzureRmContext
-        $currentSubscription = $currentContext.Subscription
-        if ($currentSubscription.Id -ne $subscriptionId)
-        {
-            LogErrorAndThrow("SubscriptionId '$($subscriptionId)' is not selected as current default subscription")
-        }
-    }
-
+Function ProcessItemImpl($processor, $csvItem, $reportItem) {
+    $reportItem | Add-Member NoteProperty "VaultNameCheck" $null
+    $reportItem | Add-Member NoteProperty "SourceConfigurationServerCheck" $null
+    $reportItem | Add-Member NoteProperty "SourceMachineNameCheck" $null
+    $reportItem | Add-Member NoteProperty "TargetPostFailoverResourceGroupCheck" $null
+    $reportItem | Add-Member NoteProperty "TargetPostFailoverStorageAccountNameCheck" $null
+    $reportItem | Add-Member NoteProperty "TargetPostFailoverVNETCheck" $null
+    $reportItem | Add-Member NoteProperty "TargetPostFailoverSubnetCheck" $null
+    $reportItem | Add-Member NoteProperty "ReplicationPolicyCheck" $null
+    $reportItem | Add-Member NoteProperty "TargetAvailabilitySetCheck" $null
+    $reportItem | Add-Member NoteProperty "TargetPrivateIPCheck" $null
+    $reportItem | Add-Member NoteProperty "TargetMachineSizeCheck" $null
+    $reportItem | Add-Member NoteProperty "TargetMachineNameCheck" $null
+    
     $vaultName = $csvItem.VAULT_NAME
-    $sourceAccountName = $csvItem.ACCOUNT_NAME
+    $sourceMachineName = $csvItem.SOURCE_MACHINE_NAME
     $sourceConfigurationServer = $csvItem.CONFIGURATION_SERVER
     $targetPostFailoverResourceGroup = $csvItem.TARGET_RESOURCE_GROUP
     $targetPostFailoverStorageAccountName = $csvItem.TARGET_STORAGE_ACCOUNT
     $targetPostFailoverVNET = $csvItem.TARGET_VNET
     $targetPostFailoverSubnet = $csvItem.TARGET_SUBNET
-    $sourceMachineName = $csvItem.SOURCE_MACHINE_NAME
     $replicationPolicy = $csvItem.REPLICATION_POLICY
     $targetAvailabilitySet = $csvItem.AVAILABILITY_SET
     $targetPrivateIP = $csvItem.PRIVATE_IP
     $targetMachineSize = $csvItem.MACHINE_SIZE
     $targetMachineName = $csvItem.TARGET_MACHINE_NAME
-    $targetStorageAccountRG = $csvItem.TARGET_STORAGE_ACCOUNT_RG
-    $targetVNETRG = $csvItem.TARGET_VNET_RG
 
-    #Print replication settings
-    LogTrace "[REPLICATIONJOB SETTINGS]-$($sourceMachineName)"
-    LogTrace "SourceMachineName=$($sourceMachineName)"
-    LogTrace "TargetMachineName=$($targetMachineName)"
-    LogTrace "VaultName=$($vaultName)"
-    LogTrace "SourceConfigurationServer=$($sourceConfigurationServer)"
-    LogTrace "AccountName=$($sourceAccountName)"
-    LogTrace "TargetPostFailoverResourceGroup=$($targetPostFailoverResourceGroup)"
-    LogTrace "TargetPostFailoverStorageAccountName=$($targetPostFailoverStorageAccountName)"
-    LogTrace "TargetPostFailoverVNET=$($targetPostFailoverVNET)"
-    LogTrace "TargetPostFailoverSubnet=$($targetPostFailoverSubnet)"
-    LogTrace "TargetPostFailoverSubnet=$($targetPostFailoverSubnet)"
-    LogTrace "ReplicationPolicy=$($replicationPolicy)"
-    LogTrace "TargetAvailabilitySet=$($targetAvailabilitySet)"
-    LogTrace "TargetPrivateIP=$($targetPrivateIP)"
-    LogTrace "TargetMachineSize=$($targetMachineSize)"
-    LogTrace "targetStorageAccountRG=$($targetStorageAccountRG)"
-    LogTrace "targetVNETRG=$($targetVNETRG)"
+    $vaultServer = $asrCommon.GetAndEnsureVaultContext($vaultName)
+    $fabricServer = $asrCommon.GetFabricServer($sourceConfigurationServer)
+    $reportItem.SourceConfigurationServerCheck = "DONE"
 
-    $statusItemInfo = [CheckInformation]::new()
-    $statusItemInfo.Machine = $sourceMachineName
+    $protectionContainer = $asrCommon.GetProtectionContainer($fabricServer)
+    $protectableVM = $asrCommon.GetProtectableItem($protectionContainer, $sourceMachineName)
+    $reportItem.SourceMachineNameCheck = "DONE"
 
-    $targetVault = Get-AzureRmRecoveryServicesVault -Name $vaultName
-    if ($targetVault -eq $null)
-    {
-        LogError("Vault with name '$($vaultName)' unable to find")
-    }
-    $statusItemInfo.VaultNameCheck = "DONE"
-
-    Set-AzureRmRecoveryServicesAsrVaultContext -Vault $targetVault
-
-    $fabricServer = Get-AzureRmRecoveryServicesAsrFabric -FriendlyName $sourceConfigurationServer
-    $protectionContainer = Get-AzureRmRecoveryServicesAsrProtectionContainer -Fabric $fabricServer
-    $statusItemInfo.SourceConfigurationServerCheck = "DONE"
-    
-    $protectableVM = Get-AzureRmRecoveryServicesAsrProtectableItem `
-        -ProtectionContainer $protectionContainer `
-        -FriendlyName $sourceMachineName
-    $statusItemInfo.SourceMachineNameCheck = "DONE"
-
-    if ($protectableVM.ReplicationProtectedItemId -ne $null)
-    {
-        $protectedItem = Get-AzureRmRecoveryServicesAsrReplicationProtectedItem `
-            -ProtectionContainer $protectionContainer `
-            -FriendlyName $sourceMachineName
+    if ($protectableVM.ReplicationProtectedItemId -ne $null) {
+        $protectedItem = $asrCommon.GetProtectedItem($protectionContainer, $sourceMachineName)
 
         $apiVersion = "2018-01-10"
         #Using 'Get-AzureRmResource -ResourceId $protectedItem.ID -ApiVersion $apiVersion' returns $null after 5.x AzureRM.Resources module version        
-        $resourceName = [string]::Concat($targetVault.Name, "/", $fabricServer.Name, "/", $protectionContainer.Name, "/", $protectedItem.Name)
+        $resourceName = [string]::Concat($vaultServer.Name, "/", $fabricServer.Name, "/", $protectionContainer.Name, "/", $protectedItem.Name)
         $resourceRawData = Get-AzureRmResource `
-             -ResourceGroupName $targetVault.ResourceGroupName `
+             -ResourceGroupName $vaultServer.ResourceGroupName `
              -ResourceType  $protectedItem.Type `
              -ResourceName $resourceName `
              -ApiVersion $apiVersion
@@ -166,146 +74,127 @@ Function GetProtectedItemStatus($csvItem)
         try {
             #$resourceRawData.Properties.providerSpecificDetails.recoveryAzureResourceGroupId
             $targetResourceGroup = Get-AzureRmResourceGroup -Name $targetPostFailoverResourceGroup
-            CheckParameter 'TARGET_RESOURCE_GROUP' $targetResourceGroup.ResourceId $resourceRawData.Properties.providerSpecificDetails.recoveryAzureResourceGroupId
-            $statusItemInfo.TargetPostFailoverResourceGroupCheck = "DONE"
-        }
-        catch {
-            $statusItemInfo.TargetPostFailoverResourceGroupCheck = "ERROR"
+            CheckParameter $processor.Logger 'TARGET_RESOURCE_GROUP' $targetResourceGroup.ResourceId $resourceRawData.Properties.providerSpecificDetails.recoveryAzureResourceGroupId
+            $reportItem.TargetPostFailoverResourceGroupCheck = "DONE"
+        } catch {
+            $reportItem.TargetPostFailoverResourceGroupCheck = "ERROR"
             $exceptionMessage = $_ | Out-String
-            LogError $exceptionMessage
+            $processor.Logger.LogError($exceptionMessage)
         }
 
         #$resourceRawData.Properties.providerSpecificDetails.RecoveryAzureStorageAccount
         try {
             $RecoveryAzureStorageAccountRef = Get-AzureRmResource -ResourceId $resourceRawData.Properties.providerSpecificDetails.RecoveryAzureStorageAccount
-            CheckParameter 'TARGET_STORAGE_ACCOUNT' $targetPostFailoverStorageAccountName $RecoveryAzureStorageAccountRef.ResourceName
-            $statusItemInfo.TargetPostFailoverStorageAccountNameCheck = "DONE"
-        }
-        catch {
-            $statusItemInfo.TargetPostFailoverStorageAccountNameCheck = "ERROR"
+            CheckParameter $processor.Logger 'TARGET_STORAGE_ACCOUNT' $targetPostFailoverStorageAccountName $RecoveryAzureStorageAccountRef.Name
+            $reportItem.TargetPostFailoverStorageAccountNameCheck = "DONE"
+        } catch {
+            $reportItem.TargetPostFailoverStorageAccountNameCheck = "ERROR"
             $exceptionMessage = $_ | Out-String
-            LogError $exceptionMessage
+            $processor.Logger.LogError($exceptionMessage)
         }
 
         # #$resourceRawData.Properties.PolicyFriendlyName
-        # $statusItemInfo.replicationPolicy = "DONE"
+        # $reportItem.replicationPolicy = "DONE"
         try {
-            CheckParameter 'REPLICATION_POLICY' $replicationPolicy $resourceRawData.Properties.PolicyFriendlyName
-            $statusItemInfo.ReplicationPolicyCheck = "DONE"
-        }
-        catch {
-            $statusItemInfo.ReplicationPolicyCheck = "ERROR"
+            CheckParameter $processor.Logger 'REPLICATION_POLICY' $replicationPolicy $resourceRawData.Properties.PolicyFriendlyName
+            $reportItem.ReplicationPolicyCheck = "DONE"
+        } catch {
+            $reportItem.ReplicationPolicyCheck = "ERROR"
             $exceptionMessage = $_ | Out-String
-            LogError $exceptionMessage
+            $processor.Logger.LogError($exceptionMessage)
         }
 
         # #$resourceRawData.Properties.providerSpecificDetails.recoveryAvailabilitySetId
-        # $statusItemInfo.targetAvailabilitySet = "DONE"
+        # $reportItem.targetAvailabilitySet = "DONE"
         try {
             $actualAvailabilitySet = $resourceRawData.Properties.providerSpecificDetails.recoveryAvailabilitySetId
-            if ($targetAvailabilitySet -eq '' -and $actualAvailabilitySet -eq '')
-            {
-                $statusItemInfo.TargetAvailabilitySetCheck = "DONE"
+            if ($targetAvailabilitySet -eq '' -and $actualAvailabilitySet -eq '') {
+                $reportItem.TargetAvailabilitySetCheck = "DONE"
             } else {
                 $targetAvailabilitySetObj = Get-AzureRmAvailabilitySet `
                     -ResourceGroupName $targetPostFailoverResourceGroup `
                     -Name $targetAvailabilitySet
-                CheckParameter 'AVAILABILITY_SET' $targetAvailabilitySetObj.Id $actualAvailabilitySet
-                $statusItemInfo.TargetAvailabilitySetCheck = "DONE"
+                CheckParameter $processor.Logger 'AVAILABILITY_SET' $targetAvailabilitySetObj.Id $actualAvailabilitySet
+                $reportItem.TargetAvailabilitySetCheck = "DONE"
             }
-        }
-        catch {
-            $statusItemInfo.TargetAvailabilitySetCheck = "ERROR"
+        } catch {
+            $reportItem.TargetAvailabilitySetCheck = "ERROR"
             $exceptionMessage = $_ | Out-String
-            LogError $exceptionMessage
+            $processor.Logger.LogError($exceptionMessage)
         }
       
         # #$resourceRawData.Properties.providerSpecificDetails.recoveryAzureVMSize
-        # $statusItemInfo.targetMachineSize = "DONE"
+        # $reportItem.targetMachineSize = "DONE"
         try {
-            CheckParameter 'MACHINE_SIZE' $targetMachineSize $resourceRawData.Properties.providerSpecificDetails.recoveryAzureVMSize
-            $statusItemInfo.TargetMachineSizeCheck = "DONE"
-        }
-        catch {
-            $statusItemInfo.TargetMachineSizeCheck = "ERROR"
+            CheckParameter $processor.Logger 'MACHINE_SIZE' $targetMachineSize $resourceRawData.Properties.providerSpecificDetails.recoveryAzureVMSize
+            $reportItem.TargetMachineSizeCheck = "DONE"
+        } catch {
+            $reportItem.TargetMachineSizeCheck = "ERROR"
             $exceptionMessage = $_ | Out-String
-            LogError $exceptionMessage
+            $processor.Logger.LogError($exceptionMessage)
         }
 
         # #$resourceRawData.Properties.providerSpecificDetails.recoveryAzureVMName
         try {
-            CheckParameter 'TARGET_MACHINE_NAME' $targetMachineName $resourceRawData.Properties.providerSpecificDetails.recoveryAzureVMName
-            $statusItemInfo.TargetMachineNameCheck = "DONE"
-        }
-        catch {
-            $statusItemInfo.TargetMachineNameCheck = "ERROR"
+            CheckParameter $processor.Logger 'TARGET_MACHINE_NAME' $targetMachineName $resourceRawData.Properties.providerSpecificDetails.recoveryAzureVMName
+            $reportItem.TargetMachineNameCheck = "DONE"
+        } catch {
+            $reportItem.TargetMachineNameCheck = "ERROR"
             $exceptionMessage = $_ | Out-String
-            LogError $exceptionMessage
+            $processor.Logger.LogError($exceptionMessage)
         }
 
         # #nic
         # #$resourceRawData.Properties.providerSpecificDetails.vmNics[0].replicaNicStaticIPAddress
-        # $statusItemInfo.targetPrivateIP = "DONE"
+        # $reportItem.targetPrivateIP = "DONE"
         try {
-            CheckParameter 'PRIVATE_IP' $targetPrivateIP $resourceRawData.Properties.providerSpecificDetails.vmNics[0].replicaNicStaticIPAddress
-            $statusItemInfo.TargetPrivateIPCheck = "DONE"
-        }
-        catch {
-            $statusItemInfo.TargetPrivateIPCheck = "ERROR"
+            CheckParameter $processor.Logger 'PRIVATE_IP' $targetPrivateIP $resourceRawData.Properties.providerSpecificDetails.vmNics[0].replicaNicStaticIPAddress
+            $reportItem.TargetPrivateIPCheck = "DONE"
+        } catch {
+            $reportItem.TargetPrivateIPCheck = "ERROR"
             $exceptionMessage = $_ | Out-String
-            LogError $exceptionMessage
+            $processor.Logger.LogError($exceptionMessage)
         }
 
         # #$resourceRawData.Properties.providerSpecificDetails.vmNics[0].recoveryVMNetworkId
-        # $statusItemInfo.targetPostFailoverVNET = "DONE"
+        # $reportItem.targetPostFailoverVNET = "DONE"
         try {
             $VNETRef = Get-AzureRmResource -ResourceId $resourceRawData.Properties.providerSpecificDetails.vmNics[0].recoveryVMNetworkId
-            CheckParameter 'TARGET_VNET' $VNETRef.ResourceId $resourceRawData.Properties.providerSpecificDetails.vmNics[0].recoveryVMNetworkId
-            $statusItemInfo.TargetPostFailoverVNETCheck = "DONE"
-        }
-        catch {
-            $statusItemInfo.TargetPostFailoverVNETCheck = "ERROR"
+            CheckParameter $processor.Logger 'TARGET_VNET' $VNETRef.ResourceId $resourceRawData.Properties.providerSpecificDetails.vmNics[0].recoveryVMNetworkId
+            $reportItem.TargetPostFailoverVNETCheck = "DONE"
+        } catch {
+            $reportItem.TargetPostFailoverVNETCheck = "ERROR"
             $exceptionMessage = $_ | Out-String
-            LogError $exceptionMessage
+            $processor.Logger.LogError($exceptionMessage)
         }
 
         # #$resourceRawData.Properties.providerSpecificDetails.vmNics[0].recoveryVMSubnetName
-        # $statusItemInfo.targetPostFailoverSubnet = "DONE"
+        # $reportItem.targetPostFailoverSubnet = "DONE"
         try {
-            CheckParameter 'TARGET_SUBNET' $targetPostFailoverSubnet $resourceRawData.Properties.providerSpecificDetails.vmNics[0].recoveryVMSubnetName
-            $statusItemInfo.TargetPostFailoverSubnetCheck = "DONE"
-        }
-        catch {
-            $statusItemInfo.TargetPostFailoverSubnetCheck = "ERROR"
+            CheckParameter $processor.Logger 'TARGET_SUBNET' $targetPostFailoverSubnet $resourceRawData.Properties.providerSpecificDetails.vmNics[0].recoveryVMSubnetName
+            $reportItem.TargetPostFailoverSubnetCheck = "DONE"
+        } catch {
+            $reportItem.TargetPostFailoverSubnetCheck = "ERROR"
             $exceptionMessage = $_ | Out-String
-            LogError $exceptionMessage
+            $processor.Logger.LogError($exceptionMessage)
         }
-
-
+    } else {
+        $processor.Logger.LogTrace("'$($sourceMachineName)' item is not in a protected state ready for replication")
     }
-
-    $protectedItemStatusArray.Add($statusItemInfo)
 }
 
-
-foreach ($csvItem in $csvObj)
-{
+Function ProcessItem($processor, $csvItem, $reportItem) {
     try {
-        GetProtectedItemStatus -csvItem $csvItem
-    } catch {
-        LogError "Exception creating update properties job"
+        ProcessItemImpl $processor $csvItem $reportItem
+    }
+    catch {
         $exceptionMessage = $_ | Out-String
-
-        $statusItemInfo = [CheckInformation]::new()
-        $statusItemInfo.Machine = $csvItem.SOURCE_MACHINE_NAME
-        $statusItemInfo.Exception = "ERROR RECOVERING INFO" 
-        $protectedItemStatusArray.Add($statusItemInfo)
-
-        LogError $exceptionMessage
+        $processor.Logger.LogError($exceptionMessage)
+        throw
     }
 }
 
-$protectedItemStatusArray.ToArray() | Export-Csv -LiteralPath $CsvOutput -Delimiter ',' -NoTypeInformation
-
-LogTrace("[FINISH]-Finishing properties check")
-
+$logger = New-AsrLoggerInstance -CommandPath $PSCommandPath
+$asrCommon = New-AsrCommonInstance -Logger $logger
+$processor = New-CsvProcessorInstance -Logger $logger -ProcessItemFunction $function:ProcessItem
+$processor.ProcessFile($CsvFilePath)
